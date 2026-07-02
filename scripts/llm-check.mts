@@ -1,6 +1,6 @@
-import { loadConfig } from "./src/config.js";
-import { getToolSchemas } from "./src/agent/tools.js";
-import { OpenAIProvider } from "./src/llm/openai.js";
+import { loadConfig } from "../src/config.js";
+import { getToolSchemas } from "../src/agent/tools.js";
+import { OpenAIProvider } from "../src/llm/openai.js";
 
 const config = loadConfig(process.env, [], process.cwd());
 console.log("baseUrl:", config.llm.baseUrl ?? "(default OpenAI)");

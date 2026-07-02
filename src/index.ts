@@ -1,6 +1,9 @@
 import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
+import { runAgentStep } from "./agent/orchestrator.js";
+import { createBrowserToolRuntime } from "./agent/tools.js";
+import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
 
 async function main(): Promise<void> {
@@ -12,6 +15,13 @@ async function main(): Promise<void> {
 
   const config = loadConfig(process.env, process.argv.slice(2), process.cwd());
   const session = await launchBrowserSession(config.browser);
+  const runtime = createBrowserToolRuntime(session.page);
+  const provider = config.llm.apiKey
+    ? new OpenAIProvider({
+        apiKey: config.llm.apiKey,
+        model: config.llm.orchestratorModel,
+      })
+    : null;
 
   const close = async () => {
     await session.close();
@@ -28,7 +38,24 @@ async function main(): Promise<void> {
       output: process.stdout,
       prompt: config.repl.prompt,
       handleTask: async (task) => {
-        process.stdout.write(`M0 skeleton received task, no agent loop yet: ${JSON.stringify(task)}\n`);
+        if (!provider) {
+          process.stdout.write("OPENAI_API_KEY is required for the M1 agent loop.\n");
+          return;
+        }
+
+        const result = await runAgentStep({
+          task,
+          provider,
+          runtime,
+          observation: {
+            url: session.page.url(),
+            title: await session.page.title(),
+            lastToolResult: null,
+          },
+        });
+
+        process.stdout.write(`Using tool result: ${JSON.stringify(result.toolResult)}\n`);
+        process.stdout.write(`Usage: ${JSON.stringify(result.usage)}\n`);
       },
     });
   } finally {

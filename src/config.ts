@@ -15,8 +15,15 @@ export interface ReplConfig {
   prompt: string;
 }
 
+export interface LlmConfig {
+  apiKey?: string;
+  orchestratorModel: string;
+  provider: "openai";
+}
+
 export interface AppConfig {
   browser: BrowserConfig;
+  llm: LlmConfig;
   repl: ReplConfig;
 }
 
@@ -75,6 +82,11 @@ export function loadConfig(
       resetProfile: cli.resetProfile,
       userDataDir: path.resolve(cwd, profileDir),
     },
+    llm: {
+      apiKey: env.OPENAI_API_KEY,
+      orchestratorModel: env.BROWSER_AGENT_ORCHESTRATOR_MODEL ?? "gpt-5.4-mini",
+      provider: "openai",
+    },
     repl: {
       prompt: "browser-agent> ",
     },
@@ -91,5 +103,7 @@ export function getUsageText(): string {
     "Environment:",
     "  BROWSER_AGENT_PROFILE_DIR=.browser-profile",
     "  BROWSER_AGENT_NAV_TIMEOUT_MS=30000",
+    "  BROWSER_AGENT_ORCHESTRATOR_MODEL=gpt-5.4-mini",
+    "  OPENAI_API_KEY=...",
   ].join("\n");
 }

@@ -23,4 +23,5 @@ Secrets belong in `.env`; committed examples belong in `.env.example`.
 ## Milestone Status
 
 - M0: TypeScript skeleton, headed persistent browser session, terminal REPL.
-- M1-M6: pending.
+- M1: OpenAI `LLMProvider`, `navigate` tool schema, one-step orchestrator loop.
+- M2-M6: pending.

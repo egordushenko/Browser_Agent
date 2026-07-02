@@ -29,31 +29,50 @@ export function formatTaskAcceptedLog(task: string): string {
 }
 
 export async function startRepl(options: ReplOptions): Promise<void> {
+  const isInteractive = Boolean((options.input as Readable & { isTTY?: boolean }).isTTY);
   const rl: Interface = createInterface({
     input: options.input,
     output: options.output,
-    terminal: Boolean((options.output as Writable & { isTTY?: boolean }).isTTY),
+    terminal: isInteractive,
   });
 
   options.output.write("Enter a browser task, or type exit.\n");
 
   try {
+    if (!isInteractive) {
+      for await (const answer of rl) {
+        const shouldContinue = await handleReplInput(answer, options);
+        if (!shouldContinue) {
+          break;
+        }
+      }
+      return;
+    }
+
     while (true) {
       const answer = await rl.question(options.prompt);
-      const normalized = normalizeTaskInput(answer);
-
-      if (normalized.kind === "empty") {
-        continue;
-      }
-      if (normalized.kind === "exit") {
-        options.output.write("Stopping Browser Agent.\n");
+      const shouldContinue = await handleReplInput(answer, options);
+      if (!shouldContinue) {
         break;
       }
-
-      options.output.write(`${formatTaskAcceptedLog(normalized.task)}\n`);
-      await options.handleTask(normalized.task);
     }
   } finally {
     rl.close();
   }
+}
+
+async function handleReplInput(input: string, options: ReplOptions): Promise<boolean> {
+  const normalized = normalizeTaskInput(input);
+
+  if (normalized.kind === "empty") {
+    return true;
+  }
+  if (normalized.kind === "exit") {
+    options.output.write("Stopping Browser Agent.\n");
+    return false;
+  }
+
+  options.output.write(`${formatTaskAcceptedLog(normalized.task)}\n`);
+  await options.handleTask(normalized.task);
+  return true;
 }

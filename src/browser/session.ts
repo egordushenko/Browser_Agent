@@ -37,6 +37,8 @@ export async function launchBrowserSession(config: BrowserConfig): Promise<Brows
     // No fixed viewport: the page fills the whole window instead of a 1280x720 area with gray padding.
     viewport: null,
   });
+  // Element actions fail fast with a descriptive Playwright error instead of racing the step timeout.
+  context.setDefaultTimeout(config.actionTimeoutMs);
   context.setDefaultNavigationTimeout(config.navTimeoutMs);
 
   const page = context.pages()[0] ?? (await context.newPage());

@@ -123,8 +123,14 @@ function chooseSelector(raw: RawCandidateElement): Pick<PerceptionCandidate, "se
   if (raw.ariaLabel) {
     return { selectorSource: "aria-label", value: `css=[aria-label="${escapeAttributeValue(raw.ariaLabel)}"]` };
   }
-  if (raw.text.trim()) {
-    return { selectorSource: "text", value: `text=${raw.text.trim()}` };
+  const firstTextLine = raw.text
+    .split("\n")
+    .map((line) => line.trim())
+    .find((line) => line.length > 0);
+  if (firstTextLine) {
+    // Playwright text= does substring matching, so a single short line is far more
+    // robust than the element's full multiline innerText.
+    return { selectorSource: "text", value: `text=${firstTextLine.slice(0, 80)}` };
   }
   return null;
 }

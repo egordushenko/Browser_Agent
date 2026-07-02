@@ -91,7 +91,7 @@ async function main(): Promise<void> {
             },
             onStepResult: (step) => {
               if (!step.toolCall) {
-                process.stdout.write("Model returned no tool call.\n");
+                process.stdout.write(`Model returned no tool call${step.text ? `: ${formatForLog(step.text)}` : "."}\n`);
               } else if (step.toolResult) {
                 const status = step.toolResult.ok ? "Result" : "Error";
                 process.stdout.write(`${status}: ${formatForLog(step.toolResult.content)}\n`);

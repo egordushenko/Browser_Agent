@@ -52,7 +52,9 @@ export class OpenAIProvider implements LLMProvider {
 
     if (req.tools.length > 0) {
       request.tools = req.tools;
-      request.tool_choice = "auto";
+      // The orchestrator always has done/ask_user available, so a tool call can be demanded
+      // on every turn; otherwise models drift into plain-text notes and stall the loop.
+      request.tool_choice = "required";
     }
 
     const response = await this.client.responses.create(request);

@@ -18,6 +18,7 @@ export interface RunAgentStepInput {
 }
 
 export interface RunAgentStepResult {
+  text?: string;
   toolCall?: ToolCall;
   toolResult: ToolResult | null;
   usage: Usage;
@@ -47,6 +48,7 @@ export interface RunAgentTaskInput {
 
 export interface AgentTaskStep {
   observation: CompactObservation;
+  text?: string;
   toolCall?: ToolCall;
   toolResult: ToolResult | null;
   usage: Usage;
@@ -76,6 +78,7 @@ export async function runAgentStep(input: RunAgentStepInput): Promise<RunAgentSt
 
   if (!response.toolCall) {
     return {
+      text: response.text,
       toolCall: undefined,
       toolResult: null,
       usage: response.usage,

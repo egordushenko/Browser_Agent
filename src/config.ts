@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export interface BrowserConfig {
+  actionTimeoutMs: number;
   channel: "chrome";
   headless: false;
   navTimeoutMs: number;
@@ -93,6 +94,7 @@ export function loadConfig(
 
   return {
     browser: {
+      actionTimeoutMs: Number(env.BROWSER_AGENT_ACTION_TIMEOUT_MS ?? "10000"),
       channel: "chrome",
       headless: false,
       navTimeoutMs,
@@ -134,6 +136,7 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_PROFILE_DIR=.browser-profile",
     "  BROWSER_AGENT_SCREENSHOT_DIR=.screenshots",
     "  BROWSER_AGENT_NAV_TIMEOUT_MS=30000",
+    "  BROWSER_AGENT_ACTION_TIMEOUT_MS=10000",
     "  BROWSER_AGENT_ORCHESTRATOR_MODEL=gpt-5.4-mini",
     "  BROWSER_AGENT_DOM_MODEL=gpt-5.4-nano",
     "  BROWSER_AGENT_CONTEXT_RECENT_STEPS=8",

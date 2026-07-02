@@ -49,4 +49,31 @@ describe("collectPagePerception", () => {
       },
     ]);
   });
+
+  test("text selectors use one short line instead of the full multiline innerText", async () => {
+    const page: PagePerceptionPage = {
+      locator: () => ({
+        ariaSnapshot: async () => "-",
+      }),
+      evaluate: async (fn) =>
+        fn([
+          {
+            tagName: "A",
+            id: "",
+            text: "  \nПостоянная работа, подработка\nAI-first Product Engineer · Full-Stack\n80 000 ₽",
+            role: null,
+            ariaLabel: null,
+            testId: null,
+            name: null,
+            placeholder: null,
+            type: null,
+          },
+        ]),
+    };
+
+    const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 200 });
+
+    expect(perception.candidates[0].selector).toBe("text=Постоянная работа, подработка");
+    expect(perception.candidates[0].selector).not.toContain("\n");
+  });
 });

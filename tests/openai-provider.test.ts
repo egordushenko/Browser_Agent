@@ -53,6 +53,7 @@ describe("OpenAIProvider", () => {
     });
 
     expect(requests).toHaveLength(1);
+    expect(requests[0]).toMatchObject({ tool_choice: "required" });
     expect(response).toEqual({
       toolCall: {
         id: "call-abc",

@@ -3,6 +3,7 @@ import path from "node:path";
 import type { Page } from "playwright";
 import { CandidateRegistry } from "../browser/candidate-registry.js";
 import { collectPagePerceptionWithRegistry } from "../browser/perception.js";
+import { missingCheckpointsForDone } from "./checkpoints.js";
 import type { ObjectMemory } from "./object-memory.js";
 import type { DomAgent } from "../subagents/dom-agent.js";
 import type { DomQueryResult, MemoryObject, ToolCall, ToolResult, ToolSchema } from "../types.js";
@@ -10,7 +11,7 @@ import type { DomQueryResult, MemoryObject, ToolCall, ToolResult, ToolSchema } f
 export interface BrowserToolRuntime {
   askUser: (question: string) => Promise<{ question: string; answer?: string }>;
   click: (candidateId: string) => Promise<{ candidateId: string }>;
-  done: (summary: string) => Promise<{ summary: string }>;
+  done: (summary: string, incompleteReason?: string) => Promise<{ summary: string; incompleteReason?: string }>;
   navigate: (url: string) => Promise<{ title: string; url: string }>;
   openCandidate: (candidateId: string) => Promise<{ candidateId: string; href?: string }>;
   queryDom: (question: string) => Promise<DomQueryResult>;
@@ -204,7 +205,9 @@ export function getToolSchemas(): ToolSchema[] {
     {
       type: "function",
       name: "done",
-      description: "Finish the task with a short factual report of what was accomplished and what was intentionally skipped.",
+      description:
+        "Finish the task with a short factual report. Blocked while a proposed/confirmed batch is unfinished " +
+        "unless incomplete_reason honestly explains what was not done and why.",
       strict: true,
       parameters: {
         type: "object",
@@ -213,8 +216,12 @@ export function getToolSchemas(): ToolSchema[] {
             type: "string",
             description: "Final report for the user.",
           },
+          incomplete_reason: {
+            type: ["string", "null"],
+            description: "Honest reason why pending checkpoints cannot be completed; null when everything required is done.",
+          },
         },
-        required: ["summary"],
+        required: ["summary", "incomplete_reason"],
         additionalProperties: false,
       },
     },
@@ -314,10 +321,11 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
     }
     if (call.name === "done") {
       const summary = readRequiredString(call.arguments, "summary");
+      const incompleteReason = readOptionalString(call.arguments, "incomplete_reason");
       return {
         ok: true,
         toolName: call.name,
-        content: await runtime.done(summary),
+        content: await runtime.done(summary, incompleteReason),
       };
     }
 
@@ -362,7 +370,18 @@ export function createBrowserToolRuntime(
       options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId };
     },
-    done: async (summary) => ({ summary }),
+    done: async (summary, incompleteReason) => {
+      if (options?.objectMemory && !incompleteReason?.trim()) {
+        const missing = missingCheckpointsForDone(options.objectMemory);
+        if (missing.length > 0) {
+          throw new Error(
+            `Cannot finish yet, missing checkpoints:\n${missing.join("\n")}\n` +
+              "Either complete them, or ask the user, or call done again with incomplete_reason honestly explaining the gap.",
+          );
+        }
+      }
+      return { summary, ...(incompleteReason ? { incompleteReason } : {}) };
+    },
     screenshot: async (fullPage) => {
       const dir = options?.screenshotDir ?? ".screenshots";
       await fs.mkdir(dir, { recursive: true });

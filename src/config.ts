@@ -22,8 +22,14 @@ export interface LlmConfig {
   subAgentModel: string;
 }
 
+export interface ContextConfig {
+  maxDetailedSteps: number;
+  maxTextChars: number;
+}
+
 export interface AppConfig {
   browser: BrowserConfig;
+  context: ContextConfig;
   llm: LlmConfig;
   repl: ReplConfig;
 }
@@ -83,6 +89,10 @@ export function loadConfig(
       resetProfile: cli.resetProfile,
       userDataDir: path.resolve(cwd, profileDir),
     },
+    context: {
+      maxDetailedSteps: Number(env.BROWSER_AGENT_CONTEXT_RECENT_STEPS ?? "8"),
+      maxTextChars: Number(env.BROWSER_AGENT_CONTEXT_MAX_TEXT_CHARS ?? "2000"),
+    },
     llm: {
       apiKey: env.OPENAI_API_KEY,
       orchestratorModel: env.BROWSER_AGENT_ORCHESTRATOR_MODEL ?? "gpt-5.4-mini",
@@ -107,6 +117,8 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_NAV_TIMEOUT_MS=30000",
     "  BROWSER_AGENT_ORCHESTRATOR_MODEL=gpt-5.4-mini",
     "  BROWSER_AGENT_DOM_MODEL=gpt-5.4-nano",
+    "  BROWSER_AGENT_CONTEXT_RECENT_STEPS=8",
+    "  BROWSER_AGENT_CONTEXT_MAX_TEXT_CHARS=2000",
     "  OPENAI_API_KEY=...",
   ].join("\n");
 }

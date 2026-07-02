@@ -5,7 +5,15 @@ describe("getToolSchemas", () => {
   test("exposes navigate as a strict generic function tool", () => {
     const schemas = getToolSchemas();
 
-    expect(schemas.map((schema) => schema.name)).toEqual(["navigate", "query_dom", "click", "type"]);
+    expect(schemas.map((schema) => schema.name)).toEqual([
+      "navigate",
+      "query_dom",
+      "click",
+      "type",
+      "scroll",
+      "wait",
+      "read_page",
+    ]);
     expect(schemas[0]).toMatchObject({
       type: "function",
       name: "navigate",
@@ -34,6 +42,15 @@ describe("executeToolCall", () => {
         throw new Error("unexpected");
       },
       type: async () => {
+        throw new Error("unexpected");
+      },
+      scroll: async () => {
+        throw new Error("unexpected");
+      },
+      wait: async () => {
+        throw new Error("unexpected");
+      },
+      readPage: async () => {
         throw new Error("unexpected");
       },
     };
@@ -76,6 +93,18 @@ describe("executeToolCall", () => {
         actions.push(`type:${selector}:${text}`);
         return { selector, textLength: text.length };
       },
+      scroll: async (direction, amount) => {
+        actions.push(`scroll:${direction}:${amount}`);
+        return { direction, amount };
+      },
+      wait: async (seconds) => {
+        actions.push(`wait:${seconds}`);
+        return { seconds };
+      },
+      readPage: async (question) => {
+        actions.push(`read:${question ?? ""}`);
+        return { answer: "Page text", confidence: "medium" };
+      },
     };
 
     await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "search field" } }, runtime);
@@ -84,7 +113,17 @@ describe("executeToolCall", () => {
       { id: "t", name: "type", arguments: { selector: "css=#search", text: "hot dog" } },
       runtime,
     );
+    await executeToolCall({ id: "s", name: "scroll", arguments: { direction: "down", amount: 500 } }, runtime);
+    await executeToolCall({ id: "w", name: "wait", arguments: { seconds: 2 } }, runtime);
+    await executeToolCall({ id: "r", name: "read_page", arguments: { question: "visible prices" } }, runtime);
 
-    expect(actions).toEqual(["query:search field", "click:css=#search", "type:css=#search:hot dog"]);
+    expect(actions).toEqual([
+      "query:search field",
+      "click:css=#search",
+      "type:css=#search:hot dog",
+      "scroll:down:500",
+      "wait:2",
+      "read:visible prices",
+    ]);
   });
 });

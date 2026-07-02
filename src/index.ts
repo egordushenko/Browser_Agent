@@ -2,6 +2,7 @@ import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
 import { runAgentStep } from "./agent/orchestrator.js";
+import { AgentContext } from "./agent/context.js";
 import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
@@ -29,6 +30,10 @@ async function main(): Promise<void> {
       })
     : null;
   const runtime = createBrowserToolRuntime(session.page, domProvider ? new DomAgent(domProvider) : undefined);
+  const agentContext = new AgentContext({
+    maxDetailedSteps: config.context.maxDetailedSteps,
+    maxTextChars: config.context.maxTextChars,
+  });
 
   const close = async () => {
     await session.close();
@@ -59,6 +64,7 @@ async function main(): Promise<void> {
             title: await session.page.title(),
             lastToolResult: null,
           },
+          context: agentContext,
         });
 
         process.stdout.write(`Using tool result: ${JSON.stringify(result.toolResult)}\n`);

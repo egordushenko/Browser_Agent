@@ -13,6 +13,9 @@ describe("loadConfig", () => {
     expect(config.browser.navTimeoutMs).toBe(30000);
     expect(config.llm.provider).toBe("openai");
     expect(config.llm.orchestratorModel).toBe("gpt-5.4-mini");
+    expect(config.limits.maxSteps).toBe(40);
+    expect(config.limits.maxConsecutiveErrors).toBe(5);
+    expect(config.limits.maxNoProgress).toBe(4);
   });
 
   test("allows profile reset and profile dir overrides from argv", () => {

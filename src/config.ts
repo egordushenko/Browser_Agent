@@ -27,9 +27,17 @@ export interface ContextConfig {
   maxTextChars: number;
 }
 
+export interface AgentLimitsConfig {
+  maxConsecutiveErrors: number;
+  maxNoProgress: number;
+  maxSteps: number;
+  stepTimeoutMs: number;
+}
+
 export interface AppConfig {
   browser: BrowserConfig;
   context: ContextConfig;
+  limits: AgentLimitsConfig;
   llm: LlmConfig;
   repl: ReplConfig;
 }
@@ -93,6 +101,12 @@ export function loadConfig(
       maxDetailedSteps: Number(env.BROWSER_AGENT_CONTEXT_RECENT_STEPS ?? "8"),
       maxTextChars: Number(env.BROWSER_AGENT_CONTEXT_MAX_TEXT_CHARS ?? "2000"),
     },
+    limits: {
+      maxConsecutiveErrors: Number(env.BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS ?? "5"),
+      maxNoProgress: Number(env.BROWSER_AGENT_MAX_NO_PROGRESS ?? "4"),
+      maxSteps: Number(env.BROWSER_AGENT_MAX_STEPS ?? "40"),
+      stepTimeoutMs: Number(env.BROWSER_AGENT_STEP_TIMEOUT_MS ?? "30000"),
+    },
     llm: {
       apiKey: env.OPENAI_API_KEY,
       orchestratorModel: env.BROWSER_AGENT_ORCHESTRATOR_MODEL ?? "gpt-5.4-mini",
@@ -119,6 +133,10 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_DOM_MODEL=gpt-5.4-nano",
     "  BROWSER_AGENT_CONTEXT_RECENT_STEPS=8",
     "  BROWSER_AGENT_CONTEXT_MAX_TEXT_CHARS=2000",
+    "  BROWSER_AGENT_MAX_STEPS=40",
+    "  BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS=5",
+    "  BROWSER_AGENT_MAX_NO_PROGRESS=4",
+    "  BROWSER_AGENT_STEP_TIMEOUT_MS=30000",
     "  OPENAI_API_KEY=...",
   ].join("\n");
 }

@@ -1,8 +1,7 @@
 import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
-import { runAgentStep } from "./agent/orchestrator.js";
-import { AgentContext } from "./agent/context.js";
+import { runAgentTask } from "./agent/orchestrator.js";
 import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
@@ -30,10 +29,6 @@ async function main(): Promise<void> {
       })
     : null;
   const runtime = createBrowserToolRuntime(session.page, domProvider ? new DomAgent(domProvider) : undefined);
-  const agentContext = new AgentContext({
-    maxDetailedSteps: config.context.maxDetailedSteps,
-    maxTextChars: config.context.maxTextChars,
-  });
 
   const close = async () => {
     await session.close();
@@ -51,24 +46,31 @@ async function main(): Promise<void> {
       prompt: config.repl.prompt,
       handleTask: async (task) => {
         if (!provider) {
-          process.stdout.write("OPENAI_API_KEY is required for the M1 agent loop.\n");
+          process.stdout.write("OPENAI_API_KEY is required for the agent loop.\n");
           return;
         }
 
-        const result = await runAgentStep({
-          task,
-          provider,
-          runtime,
-          observation: {
+        const result = await runAgentTask({
+          contextOptions: {
+            maxDetailedSteps: config.context.maxDetailedSteps,
+            maxTextChars: config.context.maxTextChars,
+          },
+          limits: config.limits,
+          observe: async () => ({
             url: session.page.url(),
             title: await session.page.title(),
             lastToolResult: null,
-          },
-          context: agentContext,
+          }),
+          task,
+          provider,
+          runtime,
         });
 
-        process.stdout.write(`Using tool result: ${JSON.stringify(result.toolResult)}\n`);
-        process.stdout.write(`Usage: ${JSON.stringify(result.usage)}\n`);
+        for (const step of result.steps) {
+          process.stdout.write(`Using tool result: ${JSON.stringify(step.toolResult)}\n`);
+          process.stdout.write(`Usage: ${JSON.stringify(step.usage)}\n`);
+        }
+        process.stdout.write(`Agent stopped: ${result.stopReason}\n`);
       },
     });
   } finally {

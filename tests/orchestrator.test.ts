@@ -47,6 +47,12 @@ describe("runAgentStep", () => {
         wait: async () => {
           throw new Error("unexpected");
         },
+        askUser: async () => {
+          throw new Error("unexpected");
+        },
+        done: async () => {
+          throw new Error("unexpected");
+        },
       },
     });
 
@@ -59,6 +65,9 @@ describe("runAgentStep", () => {
       "scroll",
       "wait",
       "read_page",
+      "screenshot",
+      "ask_user",
+      "done",
     ]);
     expect(requests[0].messages.at(-1)).toMatchObject({
       role: "user",

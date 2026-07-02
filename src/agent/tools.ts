@@ -1,13 +1,18 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import type { Page } from "playwright";
 import { collectPagePerception } from "../browser/perception.js";
 import type { DomAgent } from "../subagents/dom-agent.js";
 import type { DomQueryResult, ToolCall, ToolResult, ToolSchema } from "../types.js";
 
 export interface BrowserToolRuntime {
+  askUser: (question: string) => Promise<{ question: string; answer?: string }>;
   click: (selector: string) => Promise<{ selector: string }>;
+  done: (summary: string) => Promise<{ summary: string }>;
   navigate: (url: string) => Promise<{ title: string; url: string }>;
   queryDom: (question: string) => Promise<DomQueryResult>;
   readPage: (question?: string) => Promise<DomQueryResult>;
+  screenshot?: (fullPage: boolean) => Promise<{ path: string }>;
   scroll: (direction: string, amount: number) => Promise<{ amount: number; direction: string }>;
   type: (selector: string, text: string) => Promise<{ selector: string; textLength: number }>;
   wait: (seconds: number) => Promise<{ seconds: number }>;
@@ -142,6 +147,57 @@ export function getToolSchemas(): ToolSchema[] {
         additionalProperties: false,
       },
     },
+    {
+      type: "function",
+      name: "screenshot",
+      description: "Capture a screenshot of the current page into a local file for the visible log.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          full_page: {
+            type: "boolean",
+            description: "Capture the full scrollable page instead of the viewport.",
+          },
+        },
+        required: [],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "ask_user",
+      description: "Pause and ask the user a question in the terminal; returns their answer.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "Question the user must answer before the task can continue.",
+          },
+        },
+        required: ["question"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "done",
+      description: "Finish the task with a short factual report of what was accomplished and what was intentionally skipped.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          summary: {
+            type: "string",
+            description: "Final report for the user.",
+          },
+        },
+        required: ["summary"],
+        additionalProperties: false,
+      },
+    },
   ];
 }
 
@@ -205,6 +261,37 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
         content: await runtime.readPage(question),
       };
     }
+    if (call.name === "screenshot") {
+      if (!runtime.screenshot) {
+        return {
+          ok: false,
+          toolName: call.name,
+          content: "screenshot is not available in this session",
+        };
+      }
+      const fullPage = readOptionalBoolean(call.arguments, "full_page") ?? false;
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.screenshot(fullPage),
+      };
+    }
+    if (call.name === "ask_user") {
+      const question = readRequiredString(call.arguments, "question");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.askUser(question),
+      };
+    }
+    if (call.name === "done") {
+      const summary = readRequiredString(call.arguments, "summary");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.done(summary),
+      };
+    }
 
     return {
       ok: false,
@@ -220,11 +307,37 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
   }
 }
 
-export function createBrowserToolRuntime(page: Page, domAgent?: DomAgent): BrowserToolRuntime {
+export interface BrowserToolRuntimeOptions {
+  askUser?: (question: string) => Promise<string>;
+  screenshotDir?: string;
+}
+
+export function createBrowserToolRuntime(
+  page: Page,
+  domAgent?: DomAgent,
+  options?: BrowserToolRuntimeOptions,
+): BrowserToolRuntime {
+  let screenshotCounter = 0;
   return {
+    askUser: async (question) => {
+      if (!options?.askUser) {
+        throw new Error("ask_user is not available in this session");
+      }
+      return { question, answer: await options.askUser(question) };
+    },
     click: async (selector) => {
       await resolveLocator(page, selector).click();
       return { selector };
+    },
+    done: async (summary) => ({ summary }),
+    screenshot: async (fullPage) => {
+      const dir = options?.screenshotDir ?? ".screenshots";
+      await fs.mkdir(dir, { recursive: true });
+      screenshotCounter += 1;
+      const stamp = new Date().toISOString().replaceAll(":", "-").replace(/\..*$/, "");
+      const filePath = path.join(dir, `screenshot-${stamp}-${screenshotCounter}.png`);
+      await page.screenshot({ path: filePath, fullPage });
+      return { path: filePath };
     },
     navigate: async (url) => {
       await page.goto(url);
@@ -309,6 +422,17 @@ function readOptionalNumber(value: Record<string, unknown>, key: string): number
   }
   if (typeof field !== "number" || !Number.isFinite(field)) {
     throw new Error(`Tool argument "${key}" must be a finite number`);
+  }
+  return field;
+}
+
+function readOptionalBoolean(value: Record<string, unknown>, key: string): boolean | undefined {
+  const field = value[key];
+  if (field === undefined) {
+    return undefined;
+  }
+  if (typeof field !== "boolean") {
+    throw new Error(`Tool argument "${key}" must be a boolean`);
   }
   return field;
 }

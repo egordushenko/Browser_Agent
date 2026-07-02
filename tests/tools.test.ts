@@ -13,6 +13,9 @@ describe("getToolSchemas", () => {
       "scroll",
       "wait",
       "read_page",
+      "screenshot",
+      "ask_user",
+      "done",
     ]);
     expect(schemas[0]).toMatchObject({
       type: "function",
@@ -51,6 +54,12 @@ describe("executeToolCall", () => {
         throw new Error("unexpected");
       },
       readPage: async () => {
+        throw new Error("unexpected");
+      },
+      askUser: async () => {
+        throw new Error("unexpected");
+      },
+      done: async () => {
         throw new Error("unexpected");
       },
     };
@@ -105,6 +114,14 @@ describe("executeToolCall", () => {
         actions.push(`read:${question ?? ""}`);
         return { answer: "Page text", confidence: "medium" };
       },
+      askUser: async (question) => {
+        actions.push(`ask:${question}`);
+        return { question };
+      },
+      done: async (summary) => {
+        actions.push(`done:${summary}`);
+        return { summary };
+      },
     };
 
     await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "search field" } }, runtime);
@@ -116,6 +133,8 @@ describe("executeToolCall", () => {
     await executeToolCall({ id: "s", name: "scroll", arguments: { direction: "down", amount: 500 } }, runtime);
     await executeToolCall({ id: "w", name: "wait", arguments: { seconds: 2 } }, runtime);
     await executeToolCall({ id: "r", name: "read_page", arguments: { question: "visible prices" } }, runtime);
+    await executeToolCall({ id: "a", name: "ask_user", arguments: { question: "Need address?" } }, runtime);
+    await executeToolCall({ id: "d", name: "done", arguments: { summary: "Finished" } }, runtime);
 
     expect(actions).toEqual([
       "query:search field",
@@ -124,6 +143,8 @@ describe("executeToolCall", () => {
       "scroll:down:500",
       "wait:2",
       "read:visible prices",
+      "ask:Need address?",
+      "done:Finished",
     ]);
   });
 });

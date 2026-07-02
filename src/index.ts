@@ -2,10 +2,12 @@ import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
 import { runAgentTask } from "./agent/orchestrator.js";
+import { SecurityGate } from "./agent/security.js";
 import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
 import { DomAgent } from "./subagents/dom-agent.js";
+import type { Usage } from "./types.js";
 
 async function main(): Promise<void> {
   const cli = parseCliArgs(process.argv.slice(2));
@@ -28,7 +30,7 @@ async function main(): Promise<void> {
         model: config.llm.subAgentModel,
       })
     : null;
-  const runtime = createBrowserToolRuntime(session.page, domProvider ? new DomAgent(domProvider) : undefined);
+  const domAgent = domProvider ? new DomAgent(domProvider) : undefined;
 
   const close = async () => {
     await session.close();
@@ -44,38 +46,95 @@ async function main(): Promise<void> {
       input: process.stdin,
       output: process.stdout,
       prompt: config.repl.prompt,
-      handleTask: async (task) => {
-        if (!provider) {
+      handleTask: async (task, io) => {
+        if (!provider || !domProvider) {
           process.stdout.write("OPENAI_API_KEY is required for the agent loop.\n");
           return;
         }
 
-        const result = await runAgentTask({
-          contextOptions: {
-            maxDetailedSteps: config.context.maxDetailedSteps,
-            maxTextChars: config.context.maxTextChars,
-          },
-          limits: config.limits,
-          observe: async () => ({
-            url: session.page.url(),
-            title: await session.page.title(),
-            lastToolResult: null,
-          }),
-          task,
-          provider,
-          runtime,
+        const runtime = createBrowserToolRuntime(session.page, domAgent, {
+          askUser: async (question) => io.question(`Agent question: ${question}\nanswer> `),
+          screenshotDir: config.browser.screenshotDir,
         });
 
-        for (const step of result.steps) {
-          process.stdout.write(`Using tool result: ${JSON.stringify(step.toolResult)}\n`);
-          process.stdout.write(`Usage: ${JSON.stringify(step.usage)}\n`);
+        const securityGate = new SecurityGate({
+          confirm: async (message) => {
+            const answer = await io.question(`\n${message}\nConfirm? [y/N] `);
+            return /^y(es)?$/i.test(answer.trim());
+          },
+          onDecision: (decision, reviewInput) => {
+            const verdict = decision.requiresConfirmation ? "confirmation required" : "allowed";
+            process.stdout.write(`Security check: ${reviewInput.toolName} -> ${verdict} (${decision.reason})\n`);
+          },
+          provider: domProvider,
+        });
+
+        let totalUsage: Usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };
+        try {
+          const result = await runAgentTask({
+            contextOptions: {
+              maxDetailedSteps: config.context.maxDetailedSteps,
+              maxTextChars: config.context.maxTextChars,
+            },
+            limits: config.limits,
+            observe: async () => ({
+              url: session.page.url(),
+              title: await session.page.title().catch(() => ""),
+              lastToolResult: null,
+            }),
+            onToolCall: (call, stepIndex) => {
+              process.stdout.write(`\nStep ${stepIndex + 1}\n`);
+              process.stdout.write(`Using tool: ${call.name}\n`);
+              process.stdout.write(`Input: ${JSON.stringify(call.arguments)}\n`);
+            },
+            onStepResult: (step) => {
+              if (!step.toolCall) {
+                process.stdout.write("Model returned no tool call.\n");
+              } else if (step.toolResult) {
+                const status = step.toolResult.ok ? "Result" : "Error";
+                process.stdout.write(`${status}: ${formatForLog(step.toolResult.content)}\n`);
+              }
+              totalUsage = addUsage(totalUsage, step.usage);
+            },
+            provider,
+            runtime,
+            securityGate,
+            task,
+          });
+
+          const lastStep = result.steps.at(-1);
+          if (result.stopReason === "done" && lastStep?.toolCall?.name === "done") {
+            const summary = lastStep.toolCall.arguments.summary;
+            process.stdout.write(`\nAgent report: ${typeof summary === "string" ? summary : ""}\n`);
+          }
+          process.stdout.write(
+            `Agent stopped: ${result.stopReason} (steps: ${result.steps.length}, tokens: ${totalUsage.totalTokens})\n`,
+          );
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          process.stdout.write(`Task failed: ${message}\n`);
         }
-        process.stdout.write(`Agent stopped: ${result.stopReason}\n`);
       },
     });
   } finally {
     await close();
   }
+}
+
+function formatForLog(value: unknown): string {
+  const text = typeof value === "string" ? value : JSON.stringify(value);
+  if (!text) {
+    return "";
+  }
+  return text.length > 600 ? `${text.slice(0, 600)}...` : text;
+}
+
+function addUsage(a: Usage, b: Usage): Usage {
+  return {
+    inputTokens: a.inputTokens + b.inputTokens,
+    outputTokens: a.outputTokens + b.outputTokens,
+    totalTokens: a.totalTokens + b.totalTokens,
+  };
 }
 
 main().catch((error: unknown) => {

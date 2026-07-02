@@ -6,11 +6,15 @@ export type NormalizedTaskInput =
   | { kind: "exit" }
   | { kind: "task"; task: string };
 
+export interface ReplIO {
+  question: (prompt: string) => Promise<string>;
+}
+
 export interface ReplOptions {
   input: Readable;
   output: Writable;
   prompt: string;
-  handleTask: (task: string) => Promise<void>;
+  handleTask: (task: string, io: ReplIO) => Promise<void>;
 }
 
 export function normalizeTaskInput(input: string): NormalizedTaskInput {
@@ -38,10 +42,16 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
   options.output.write("Enter a browser task, or type exit.\n");
 
+  // readline answers a pending question() before emitting a line to the iterator,
+  // so the same interface can serve mid-task questions in both modes.
+  const io: ReplIO = {
+    question: (prompt) => rl.question(prompt),
+  };
+
   try {
     if (!isInteractive) {
       for await (const answer of rl) {
-        const shouldContinue = await handleReplInput(answer, options);
+        const shouldContinue = await handleReplInput(answer, options, io);
         if (!shouldContinue) {
           break;
         }
@@ -51,7 +61,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
 
     while (true) {
       const answer = await rl.question(options.prompt);
-      const shouldContinue = await handleReplInput(answer, options);
+      const shouldContinue = await handleReplInput(answer, options, io);
       if (!shouldContinue) {
         break;
       }
@@ -61,7 +71,7 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   }
 }
 
-async function handleReplInput(input: string, options: ReplOptions): Promise<boolean> {
+async function handleReplInput(input: string, options: ReplOptions, io: ReplIO): Promise<boolean> {
   const normalized = normalizeTaskInput(input);
 
   if (normalized.kind === "empty") {
@@ -73,6 +83,6 @@ async function handleReplInput(input: string, options: ReplOptions): Promise<boo
   }
 
   options.output.write(`${formatTaskAcceptedLog(normalized.task)}\n`);
-  await options.handleTask(normalized.task);
+  await options.handleTask(normalized.task, io);
   return true;
 }

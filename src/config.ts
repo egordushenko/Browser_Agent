@@ -8,6 +8,7 @@ export interface BrowserConfig {
   headless: false;
   navTimeoutMs: number;
   resetProfile: boolean;
+  screenshotDir: string;
   userDataDir: string;
 }
 
@@ -95,6 +96,7 @@ export function loadConfig(
       headless: false,
       navTimeoutMs,
       resetProfile: cli.resetProfile,
+      screenshotDir: path.resolve(cwd, env.BROWSER_AGENT_SCREENSHOT_DIR ?? ".screenshots"),
       userDataDir: path.resolve(cwd, profileDir),
     },
     context: {
@@ -128,6 +130,7 @@ export function getUsageText(): string {
     "",
     "Environment:",
     "  BROWSER_AGENT_PROFILE_DIR=.browser-profile",
+    "  BROWSER_AGENT_SCREENSHOT_DIR=.screenshots",
     "  BROWSER_AGENT_NAV_TIMEOUT_MS=30000",
     "  BROWSER_AGENT_ORCHESTRATOR_MODEL=gpt-5.4-mini",
     "  BROWSER_AGENT_DOM_MODEL=gpt-5.4-nano",

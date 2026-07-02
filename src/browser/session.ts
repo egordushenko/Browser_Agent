@@ -4,9 +4,40 @@ import { chromium, type BrowserContext, type Page } from "playwright";
 import type { BrowserConfig } from "../config.js";
 
 export interface BrowserSession {
+  /** The page the user currently sees: new tabs (target=_blank links) are adopted automatically. */
+  activePage: () => Page;
   context: BrowserContext;
   page: Page;
   close: () => Promise<void>;
+}
+
+interface PageTrackerContext {
+  on(event: "page", listener: (page: Page) => void): unknown;
+  pages(): Page[];
+}
+
+export function trackActivePage(context: PageTrackerContext, initialPage: Page): () => Page {
+  let active = initialPage;
+  context.on("page", (newPage) => {
+    active = newPage;
+    newPage.once("close", () => {
+      if (active === newPage) {
+        active = lastOpenPage(context, initialPage);
+      }
+    });
+  });
+  return () => {
+    if (!active.isClosed()) {
+      return active;
+    }
+    active = lastOpenPage(context, initialPage);
+    return active;
+  };
+}
+
+function lastOpenPage(context: PageTrackerContext, fallback: Page): Page {
+  const pages = context.pages().filter((page) => !page.isClosed());
+  return pages.at(-1) ?? fallback;
 }
 
 export function assertSafeProfileDir(userDataDir: string): void {
@@ -43,6 +74,7 @@ export async function launchBrowserSession(config: BrowserConfig): Promise<Brows
 
   const page = context.pages()[0] ?? (await context.newPage());
   return {
+    activePage: trackActivePage(context, page),
     context,
     page,
     close: () => context.close(),

@@ -11,6 +11,7 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "- If the task requires details hidden behind a list item or card, open that item's detail view before treating hidden details as known.",
   "Recovery rules:",
   "- If a tool fails, do not repeat the identical call. Re-run query_dom, scroll, or wait, then adapt the approach.",
+  "- If a click times out, an overlay or confirmation dialog may be blocking the page: query_dom the current state first.",
   "- If the page seems incomplete, wait briefly or scroll before concluding an element is missing.",
   "Object workflow (lists of emails, products, vacancies, resumes and similar items):",
   "- query_dom extracts items as objects with objectId and status; object memory persists across pages.",
@@ -31,6 +32,8 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
 export const SECURITY_CLASSIFIER_SYSTEM_PROMPT = [
   "You are a security classifier for a browser-automation agent.",
   "You receive one intended browser action (tool name and arguments), the user task, and compact page context.",
+  "When the action includes target metadata (label, href, kind of the element being activated), weigh it heavily:",
+  "an apply/submit/pay/delete label or an application-response href means the action needs confirmation.",
   "Decide whether executing this action is potentially irreversible or destructive: payment, purchase,",
   "order or checkout confirmation, deletion, sending a message or email, or submitting a binding form.",
   "Judge the semantic intent of this specific action in context; typing into a search box, opening pages,",

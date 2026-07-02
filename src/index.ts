@@ -59,7 +59,7 @@ async function main(): Promise<void> {
         }
 
         const objectMemory = new ObjectMemory();
-        const runtime = createBrowserToolRuntime(session.page, domAgent, {
+        const runtime = createBrowserToolRuntime(() => session.activePage(), domAgent, {
           allowedNavigationUrls: extractAllowedNavigationUrls(task),
           askUser: async (question) => io.question(`Agent question: ${question}\nanswer> `),
           objectMemory,
@@ -88,8 +88,11 @@ async function main(): Promise<void> {
             limits: config.limits,
             objectMemory,
             observe: async () => ({
-              url: session.page.url(),
-              title: await session.page.title().catch(() => ""),
+              url: session.activePage().url(),
+              title: await session
+                .activePage()
+                .title()
+                .catch(() => ""),
               lastToolResult: null,
             }),
             onToolCall: (call, stepIndex) => {

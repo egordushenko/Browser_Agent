@@ -108,6 +108,76 @@ describe("runAgentTask", () => {
     expect(result.steps).toHaveLength(1);
   });
 
+  test("gates open_candidate and hands the classifier the target element metadata", async () => {
+    const classifierInputs: string[] = [];
+    const opened: string[] = [];
+    const provider: LLMProvider = {
+      complete: async (request) => {
+        const transcript = request.messages.map((message) => message.content).join("\n");
+        if (!transcript.includes("Blocked by security gate")) {
+          return {
+            toolCall: { id: "call-1", name: "open_candidate", arguments: { candidateId: "c81" } },
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          toolCall: {
+            id: "call-2",
+            name: "done",
+            arguments: { summary: "Application stopped by the user.", incomplete_reason: null },
+          },
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    };
+    const runtime: BrowserToolRuntime = {
+      askUser: async (question) => ({ question }),
+      click: async (candidateId) => ({ candidateId }),
+      describeCandidate: () => ({
+        href: "https://hh.ru/applicant/vacancy_response?vacancyId=1",
+        kind: "link",
+        label: "Откликнуться",
+      }),
+      done: async (summary) => ({ summary }),
+      navigate: async (url) => ({ url, title: "Example" }),
+      openCandidate: async (candidateId) => {
+        opened.push(candidateId);
+        return { candidateId };
+      },
+      queryDom: async () => ({ answer: "-", confidence: "medium" }),
+      readPage: async () => ({ answer: "-", confidence: "medium" }),
+      scroll: async (direction, amount) => ({ direction, amount }),
+      type: async (candidateId, text) => ({ candidateId, textLength: text.length }),
+      wait: async (seconds) => ({ seconds }),
+    };
+    const securityGate = new SecurityGate({
+      confirm: async () => false,
+      provider: {
+        complete: async (request) => {
+          classifierInputs.push(request.messages[0].content);
+          return {
+            text: JSON.stringify({ requiresConfirmation: true, reason: "Opens a job application form." }),
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        },
+      },
+    });
+
+    const result = await runAgentTask({
+      limits: { maxConsecutiveErrors: 3, maxNoProgress: 3, maxSteps: 5, stepTimeoutMs: 1000 },
+      observe: async () => ({ url: "https://hh.ru/search", title: "Search", lastToolResult: null }),
+      provider,
+      runtime,
+      securityGate,
+      task: "Apply to vacancies",
+    });
+
+    expect(opened).toEqual([]);
+    expect(result.stopReason).toBe("done");
+    expect(classifierInputs[0]).toContain("Откликнуться");
+    expect(classifierInputs[0]).toContain("vacancy_response");
+  });
+
   test("blocks a gated click when the user declines and lets the model finish with done", async () => {
     const clicked: string[] = [];
     const provider: LLMProvider = {

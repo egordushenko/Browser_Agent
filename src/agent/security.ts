@@ -1,7 +1,7 @@
 import { SECURITY_CLASSIFIER_SYSTEM_PROMPT } from "./prompts.js";
 import type { LLMProvider } from "../llm/provider.js";
 
-export const GATED_TOOL_NAMES = ["click", "type", "navigate"] as const;
+export const GATED_TOOL_NAMES = ["click", "open_candidate", "type", "navigate"] as const;
 
 export function isGatedToolName(toolName: string): boolean {
   return (GATED_TOOL_NAMES as readonly string[]).includes(toolName);
@@ -14,6 +14,8 @@ export interface SecurityDecision {
 
 export interface SecurityReviewInput {
   arguments: Record<string, unknown>;
+  /** Metadata of the concrete element being activated (label, href, kind), when known. */
+  target?: { href?: string; kind: string; label: string };
   task: string;
   title?: string;
   toolName: string;
@@ -53,7 +55,7 @@ export class SecurityGate {
         {
           role: "user",
           content: JSON.stringify({
-            action: { toolName: input.toolName, arguments: input.arguments },
+            action: { toolName: input.toolName, arguments: input.arguments, target: input.target },
             page: { title: input.title, url: input.url },
             task: input.task,
           }),
@@ -94,6 +96,7 @@ function extractJsonPayload(text: string): string {
 function buildConfirmationMessage(input: SecurityReviewInput, decision: SecurityDecision): string {
   return [
     `The agent wants to run "${input.toolName}" with ${JSON.stringify(input.arguments)}.`,
+    ...(input.target ? [`Target element: ${JSON.stringify(input.target)}`] : []),
     `Security check: ${decision.reason}`,
   ].join("\n");
 }

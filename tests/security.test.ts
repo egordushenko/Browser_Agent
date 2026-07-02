@@ -1,6 +1,16 @@
 import { describe, expect, test } from "vitest";
-import { parseSecurityDecision, SecurityGate } from "../src/agent/security.js";
+import { isGatedToolName, parseSecurityDecision, SecurityGate } from "../src/agent/security.js";
 import type { LLMProvider } from "../src/llm/provider.js";
+
+describe("isGatedToolName", () => {
+  test("gates every tool that can activate page elements or navigate", () => {
+    expect(isGatedToolName("click")).toBe(true);
+    expect(isGatedToolName("open_candidate")).toBe(true);
+    expect(isGatedToolName("type")).toBe(true);
+    expect(isGatedToolName("navigate")).toBe(true);
+    expect(isGatedToolName("query_dom")).toBe(false);
+  });
+});
 
 describe("parseSecurityDecision", () => {
   test("reads fenced classifier JSON", () => {

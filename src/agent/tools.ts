@@ -20,9 +20,17 @@ export interface BatchExecutionResult {
   results: Array<{ objectId: string; outcome: string }>;
 }
 
+export interface CandidateDescription {
+  href?: string;
+  kind: string;
+  label: string;
+}
+
 export interface BrowserToolRuntime {
   askUser: (question: string) => Promise<{ question: string; answer?: string }>;
   click: (candidateId: string) => Promise<{ candidateId: string }>;
+  /** Metadata of a known candidate for logging and security review; undefined when unknown. */
+  describeCandidate?: (candidateId: string) => CandidateDescription | undefined;
   confirmBatch?: (summary: string) => Promise<{ confirmed: boolean; objectIds: string[] }>;
   done: (summary: string, incompleteReason?: string) => Promise<{ summary: string; incompleteReason?: string }>;
   executeBatch?: (action: BatchAction, objectIds: string[]) => Promise<BatchExecutionResult>;
@@ -476,11 +484,15 @@ export interface BrowserToolRuntimeOptions {
   screenshotDir?: string;
 }
 
+export type PageSource = Page | (() => Page);
+
 export function createBrowserToolRuntime(
-  page: Page,
+  pageSource: PageSource,
   domAgent?: DomAgent,
   options?: BrowserToolRuntimeOptions,
 ): BrowserToolRuntime {
+  // New tabs opened by target=_blank links must not leave the agent acting on a stale page.
+  const getPage = typeof pageSource === "function" ? pageSource : () => pageSource;
   let screenshotCounter = 0;
   let candidateRegistry = CandidateRegistry.empty();
   return {
@@ -492,9 +504,21 @@ export function createBrowserToolRuntime(
     },
     click: async (candidateId) => {
       const candidate = candidateRegistry.get(candidateId);
-      await (await resolveLocator(page, candidate.selector)).click();
+      await (await resolveLocator(getPage(), candidate.selector)).click();
       options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId };
+    },
+    describeCandidate: (candidateId) => {
+      try {
+        const candidate = candidateRegistry.get(candidateId);
+        return {
+          ...(candidate.href ? { href: candidate.href } : {}),
+          kind: candidate.kind,
+          label: candidate.label,
+        };
+      } catch {
+        return undefined;
+      }
     },
     confirmBatch: async (summary) => {
       const memory = requireObjectMemory(options);
@@ -548,7 +572,7 @@ export function createBrowserToolRuntime(
           );
         }
         const candidate = candidateRegistry.get(controlId);
-        await (await resolveLocator(page, candidate.selector)).click();
+        await (await resolveLocator(getPage(), candidate.selector)).click();
         memory.setStatus(objectId, "action_done");
         results.push({ objectId, outcome: "action_done" });
       }
@@ -560,11 +584,12 @@ export function createBrowserToolRuntime(
       screenshotCounter += 1;
       const stamp = new Date().toISOString().replaceAll(":", "-").replace(/\..*$/, "");
       const filePath = path.join(dir, `screenshot-${stamp}-${screenshotCounter}.png`);
-      await page.screenshot({ path: filePath, fullPage });
+      await getPage().screenshot({ path: filePath, fullPage });
       return { path: filePath };
     },
     navigate: async (url) => {
       assertNavigationAllowed(url, options?.allowedNavigationUrls ?? [], candidateRegistry);
+      const page = getPage();
       await page.goto(url);
       return {
         title: await page.title(),
@@ -573,7 +598,7 @@ export function createBrowserToolRuntime(
     },
     openCandidate: async (candidateId) => {
       const candidate = candidateRegistry.get(candidateId);
-      await (await resolveLocator(page, candidate.selector)).click();
+      await (await resolveLocator(getPage(), candidate.selector)).click();
       options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId, href: candidate.href };
     },
@@ -595,7 +620,7 @@ export function createBrowserToolRuntime(
       };
     },
     queryDom: async (question) => {
-      const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
+      const { perception, registry } = await collectPagePerceptionWithRegistry(getPage(), {
         ariaSnapshotTimeoutMs: 5000,
         maxCandidateTextLength: 120,
       });
@@ -618,7 +643,7 @@ export function createBrowserToolRuntime(
       };
     },
     readPage: async (question) => {
-      const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
+      const { perception, registry } = await collectPagePerceptionWithRegistry(getPage(), {
         ariaSnapshotTimeoutMs: 5000,
         maxCandidateTextLength: 120,
       });
@@ -642,16 +667,16 @@ export function createBrowserToolRuntime(
     },
     scroll: async (direction, amount) => {
       const deltaY = direction === "up" ? -amount : amount;
-      await page.mouse.wheel(0, deltaY);
+      await getPage().mouse.wheel(0, deltaY);
       return { amount, direction };
     },
     type: async (candidateId, text) => {
       const candidate = candidateRegistry.get(candidateId);
-      await (await resolveLocator(page, candidate.selector)).fill(text);
+      await (await resolveLocator(getPage(), candidate.selector)).fill(text);
       return { candidateId, textLength: text.length };
     },
     wait: async (seconds) => {
-      await page.waitForTimeout(seconds * 1000);
+      await getPage().waitForTimeout(seconds * 1000);
       return { seconds };
     },
   };

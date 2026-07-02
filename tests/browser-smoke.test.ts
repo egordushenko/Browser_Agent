@@ -3,6 +3,7 @@ import { chromium, type Browser, type Page } from "playwright";
 import { ObjectMemory } from "../src/agent/object-memory.js";
 import { createBrowserToolRuntime, executeToolCall } from "../src/agent/tools.js";
 import { collectPagePerception } from "../src/browser/perception.js";
+import { trackActivePage } from "../src/browser/session.js";
 import type { DomAgent } from "../src/subagents/dom-agent.js";
 
 const FIXTURE_HTML = `<!DOCTYPE html>
@@ -33,6 +34,7 @@ const FIXTURE_HTML = `<!DOCTYPE html>
         80 000 ₽ · Удалённо, Гибрид
       </div>
     </section>
+    <a href="about:blank#newtab" target="_blank" id="open-new-tab">Open in new tab</a>
     <output id="active-tab">jobs</output>
     <output id="cart-count">0</output>
     <output id="opened-resume">none</output>
@@ -338,6 +340,46 @@ describe("browser smoke on a local fixture", () => {
       runtime,
     );
     expect(finished.ok).toBe(true);
+  }, 30_000);
+
+  test("a link opening a new tab moves the agent to that tab", async (ctx) => {
+    if (!browser) return ctx.skip();
+    const tabPage = await browser.newPage();
+    try {
+      await tabPage.setContent(FIXTURE_HTML);
+      const activePage = trackActivePage(tabPage.context(), tabPage);
+      const runtime = createBrowserToolRuntime(() => activePage());
+
+      const queried = await executeToolCall(
+        { id: "q", name: "query_dom", arguments: { question: "collect candidates" } },
+        runtime,
+      );
+      const candidates = (queried.content as { candidates: Array<{ candidateId: string; label: string }> }).candidates;
+      const newTabLink = candidates.find((candidate) => candidate.label === "Open in new tab");
+      expect(newTabLink).toBeDefined();
+
+      const clicked = await executeToolCall(
+        { id: "c", name: "click", arguments: { candidateId: newTabLink!.candidateId } },
+        runtime,
+      );
+      expect(clicked.ok).toBe(true);
+
+      await expect.poll(() => activePage().url(), { timeout: 5000 }).toContain("#newtab");
+
+      // Perception now runs on the adopted tab, not the original one.
+      const onNewTab = await executeToolCall(
+        { id: "q2", name: "query_dom", arguments: { question: "what is here" } },
+        runtime,
+      );
+      expect(onNewTab.ok).toBe(true);
+    } finally {
+      for (const openPage of tabPage.context().pages()) {
+        if (openPage !== tabPage && openPage !== page) {
+          await openPage.close();
+        }
+      }
+      await tabPage.close();
+    }
   }, 30_000);
 
   test("scroll and wait run without touching the DOM", async (ctx) => {

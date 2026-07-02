@@ -90,8 +90,12 @@ export async function runAgentStep(input: RunAgentStepInput): Promise<RunAgentSt
   input.onToolCall?.(response.toolCall);
 
   if (input.securityGate && isGatedToolName(response.toolCall.name)) {
+    const candidateId = response.toolCall.arguments.candidateId;
+    const target =
+      typeof candidateId === "string" ? input.runtime.describeCandidate?.(candidateId) : undefined;
     const review = await input.securityGate.review({
       arguments: response.toolCall.arguments,
+      ...(target ? { target } : {}),
       task: input.task,
       title: input.observation.title,
       toolName: response.toolCall.name,

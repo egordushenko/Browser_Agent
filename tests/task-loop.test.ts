@@ -12,7 +12,7 @@ describe("runAgentTask", () => {
         providerCalls.push(request.messages.map((message) => message.content).join("\n"));
         if (providerCalls.length === 1) {
           return {
-            toolCall: { id: "call-1", name: "click", arguments: { selector: "css=#missing" } },
+            toolCall: { id: "call-1", name: "click", arguments: { candidateId: "c99" } },
             usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           };
         }
@@ -24,15 +24,22 @@ describe("runAgentTask", () => {
     };
     const runtime: BrowserToolRuntime = {
       click: async () => {
-        throw new Error("selector not found");
+        throw new Error("candidate not found");
+      },
+      openCandidate: async () => {
+        throw new Error("candidate not found");
       },
       navigate: async (url) => ({ url, title: "Example" }),
-      queryDom: async () => ({ answer: "Use css=#search", selector: "css=#search", confidence: "high" }),
+      queryDom: async () => ({
+        answer: "Use c1",
+        candidates: [{ candidateId: "c1", kind: "input", label: "Search", tagName: "input", text: "" }],
+        confidence: "high",
+      }),
       readPage: async () => ({ answer: "Page", confidence: "medium" }),
       askUser: async (question) => ({ question }),
       done: async (summary) => ({ summary }),
       scroll: async (direction, amount) => ({ direction, amount }),
-      type: async (selector, text) => ({ selector, textLength: text.length }),
+      type: async (candidateId, text) => ({ candidateId, textLength: text.length }),
       wait: async (seconds) => ({ seconds }),
     };
 
@@ -50,14 +57,14 @@ describe("runAgentTask", () => {
       }),
       provider,
       runtime,
-      task: "Recover from a stale selector",
+      task: "Recover from a stale candidate id",
     });
 
     expect(result.stopReason).toBe("max_steps");
     expect(result.steps).toHaveLength(2);
-    expect(result.steps[0].toolResult).toMatchObject({ ok: false, content: "selector not found" });
+    expect(result.steps[0].toolResult).toMatchObject({ ok: false, content: "candidate not found" });
     expect(result.steps[1].toolResult).toMatchObject({ ok: true, toolName: "query_dom" });
-    expect(providerCalls[1]).toContain("selector not found");
+    expect(providerCalls[1]).toContain("candidate not found");
   });
 
   test("stops when the model calls done", async () => {
@@ -69,13 +76,18 @@ describe("runAgentTask", () => {
     };
     const runtime: BrowserToolRuntime = {
       askUser: async (question) => ({ question }),
-      click: async (selector) => ({ selector }),
+      click: async (candidateId) => ({ candidateId }),
+      openCandidate: async (candidateId) => ({ candidateId }),
       done: async (summary) => ({ summary }),
       navigate: async (url) => ({ url, title: "Example" }),
-      queryDom: async () => ({ answer: "Use css=#search", selector: "css=#search", confidence: "high" }),
+      queryDom: async () => ({
+        answer: "Use c1",
+        candidates: [{ candidateId: "c1", kind: "input", label: "Search", tagName: "input", text: "" }],
+        confidence: "high",
+      }),
       readPage: async () => ({ answer: "Page", confidence: "medium" }),
       scroll: async (direction, amount) => ({ direction, amount }),
-      type: async (selector, text) => ({ selector, textLength: text.length }),
+      type: async (candidateId, text) => ({ candidateId, textLength: text.length }),
       wait: async (seconds) => ({ seconds }),
     };
 
@@ -103,7 +115,7 @@ describe("runAgentTask", () => {
         const transcript = request.messages.map((message) => message.content).join("\n");
         if (!transcript.includes("Blocked by security gate")) {
           return {
-            toolCall: { id: "call-1", name: "click", arguments: { selector: "css=#pay-now" } },
+            toolCall: { id: "call-1", name: "click", arguments: { candidateId: "c-pay-now" } },
             usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
           };
         }
@@ -119,16 +131,21 @@ describe("runAgentTask", () => {
     };
     const runtime: BrowserToolRuntime = {
       askUser: async (question) => ({ question }),
-      click: async (selector) => {
-        clicked.push(selector);
-        return { selector };
+      click: async (candidateId) => {
+        clicked.push(candidateId);
+        return { candidateId };
       },
+      openCandidate: async (candidateId) => ({ candidateId }),
       done: async (summary) => ({ summary }),
       navigate: async (url) => ({ url, title: "Example" }),
-      queryDom: async () => ({ answer: "Use css=#search", selector: "css=#search", confidence: "high" }),
+      queryDom: async () => ({
+        answer: "Use c1",
+        candidates: [{ candidateId: "c1", kind: "input", label: "Search", tagName: "input", text: "" }],
+        confidence: "high",
+      }),
       readPage: async () => ({ answer: "Page", confidence: "medium" }),
       scroll: async (direction, amount) => ({ direction, amount }),
-      type: async (selector, text) => ({ selector, textLength: text.length }),
+      type: async (candidateId, text) => ({ candidateId, textLength: text.length }),
       wait: async (seconds) => ({ seconds }),
     };
     const securityGate = new SecurityGate({

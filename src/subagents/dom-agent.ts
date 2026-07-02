@@ -14,13 +14,13 @@ export class DomAgent {
       system: [
         "You are a DOM perception sub-agent.",
         "Answer using only the compact page representation provided by the caller.",
-        'Return one flat strict JSON object: {"answer": string, "selector": string?, "confidence": "low"|"medium"|"high"}.',
+        'Return one flat strict JSON object: {"answer": string, "candidateId": string?, "confidence": "low"|"medium"|"high"}.',
         "Do not nest JSON inside the answer field and do not wrap the object in code fences.",
-        "Use selectors exactly as they appear in candidates when a selector is needed.",
-        "Prefer role/css/id/data-testid/name/aria-label selectors over text selectors when several candidates answer the question.",
+        "Use candidateId exactly as it appears in candidates when a clickable element is needed.",
+        "Never invent selectors, URLs, refs, hrefs, or candidate ids.",
         "A candidate with occurrences > 1 matches several elements at once; call that out as ambiguous",
-        "and suggest a unique selector or an intermediate step (e.g. open the specific card first).",
-        "Do not return an ambiguous candidate as selector.",
+        "and suggest an intermediate step (e.g. open the specific card first).",
+        "Do not return an ambiguous candidateId.",
       ].join("\n"),
       messages: [
         {
@@ -59,7 +59,7 @@ function parseDomAgentJson(text: string | undefined): Omit<DomQueryResult, "usag
   }
 
   // Small models sometimes double-encode and put the real JSON payload into the answer field.
-  if (typeof parsed.answer === "string" && parsed.selector === undefined) {
+  if (typeof parsed.answer === "string" && parsed.candidateId === undefined) {
     const inner = parsed.answer.trim();
     if (inner.startsWith("{")) {
       try {
@@ -75,15 +75,15 @@ function parseDomAgentJson(text: string | undefined): Omit<DomQueryResult, "usag
 
   return {
     answer: typeof parsed.answer === "string" ? parsed.answer : text,
+    candidateId: typeof parsed.candidateId === "string" ? parsed.candidateId : undefined,
     confidence: normalizeConfidence(parsed.confidence),
-    selector: typeof parsed.selector === "string" ? parsed.selector : undefined,
   };
 }
 
 interface DomAgentRawResult {
   answer?: unknown;
+  candidateId?: unknown;
   confidence?: unknown;
-  selector?: unknown;
 }
 
 function normalizeConfidence(value: unknown): DomQueryResult["confidence"] {

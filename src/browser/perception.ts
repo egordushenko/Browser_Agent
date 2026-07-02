@@ -1,5 +1,6 @@
 import type { Locator, Page } from "playwright";
-import type { PagePerception, PerceptionCandidate } from "../types.js";
+import { CandidateRegistry, type CandidateRecord, toPublicCandidate } from "./candidate-registry.js";
+import type { PagePerception } from "../types.js";
 
 export interface PagePerceptionOptions {
   ariaSnapshotTimeoutMs: number;
@@ -11,9 +12,15 @@ export interface PagePerceptionPage {
   locator: (selector: string) => Pick<Locator, "ariaSnapshot">;
 }
 
+export interface PagePerceptionWithRegistry {
+  perception: PagePerception;
+  registry: CandidateRegistry;
+}
+
 interface RawCandidateElement {
   ancestorSelector?: string | null;
   ariaLabel: string | null;
+  href?: string | null;
   id: string;
   name: string | null;
   placeholder: string | null;
@@ -28,41 +35,35 @@ export async function collectPagePerception(
   page: PagePerceptionPage | Page,
   options: PagePerceptionOptions,
 ): Promise<PagePerception> {
+  return (await collectPagePerceptionWithRegistry(page, options)).perception;
+}
+
+export async function collectPagePerceptionWithRegistry(
+  page: PagePerceptionPage | Page,
+  options: PagePerceptionOptions,
+): Promise<PagePerceptionWithRegistry> {
   const perceptionPage = page as PagePerceptionPage;
   const [ariaSnapshot, rawCandidates] = await Promise.all([
     perceptionPage.locator("body").ariaSnapshot({ mode: "ai", timeout: options.ariaSnapshotTimeoutMs }),
-    perceptionPage.evaluate(collectInteractiveElements),
+    collectRawCandidates(page),
   ]);
 
-  return {
-    ariaSnapshot,
-    candidates: dedupeCandidates(
+  const pageFingerprint = fingerprintPage(page, ariaSnapshot);
+  const records = assignCandidateIds(
+    dedupeCandidates(
       rawCandidates
-        .map((candidate: RawCandidateElement) => toPerceptionCandidate(candidate, options))
+        .map((candidate: RawCandidateElement) => toCandidateDraft(candidate, options, pageFingerprint))
         .filter(isDefined),
     ),
+  );
+
+  return {
+    perception: {
+      ariaSnapshot,
+      candidates: records.map(toPublicCandidate),
+    },
+    registry: new CandidateRegistry(pageFingerprint, records),
   };
-}
-
-// Repeated controls (e.g. an apply button on every list card) produce identical selectors;
-// collapse them into one candidate and expose the count so the sub-agent knows it is ambiguous.
-function dedupeCandidates(candidates: PerceptionCandidate[]): PerceptionCandidate[] {
-  const counts = new Map<string, number>();
-  for (const candidate of candidates) {
-    counts.set(candidate.selector, (counts.get(candidate.selector) ?? 0) + 1);
-  }
-
-  const seen = new Set<string>();
-  const deduped: PerceptionCandidate[] = [];
-  for (const candidate of candidates) {
-    if (seen.has(candidate.selector)) {
-      continue;
-    }
-    seen.add(candidate.selector);
-    const occurrences = counts.get(candidate.selector) ?? 1;
-    deduped.push(occurrences > 1 ? { ...candidate, occurrences } : candidate);
-  }
-  return deduped;
 }
 
 export function truncateText(text: string, maxLength: number): string {
@@ -72,11 +73,21 @@ export function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
-function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCandidateElement[] {
-  if (Array.isArray(testElements)) {
-    return testElements;
+async function collectRawCandidates(page: PagePerceptionPage | Page): Promise<RawCandidateElement[]> {
+  if (isBrowserPage(page)) {
+    return (page as Page).evaluate(COLLECT_INTERACTIVE_ELEMENTS_SCRIPT);
   }
+  return page.evaluate(collectInteractiveElements);
+}
 
+function isBrowserPage(page: PagePerceptionPage | Page): page is Page {
+  return typeof (page as Partial<Page>).url === "function";
+}
+
+// Real Playwright pages evaluate this as a self-contained expression. Keeping all
+// browser-context helpers inline avoids bundler-injected closure references such
+// as "__name" leaking into Chrome.
+const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
   const selector = [
     "a",
     "button",
@@ -87,10 +98,12 @@ function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCa
     "[tabindex]",
     "[contenteditable='true']",
     "[data-testid]",
-    "[data-test]",
+    "[data-test]"
   ].join(",");
 
-  return Array.from(document.querySelectorAll<HTMLElement>(selector))
+  const attrSelector = (name, value) => "[" + name + "=\"" + String(value).replaceAll("\\", "\\\\").replaceAll("\"", "\\\"") + "\"]";
+
+  return Array.from(document.querySelectorAll(selector))
     .filter((element) => {
       const style = window.getComputedStyle(element);
       const rect = element.getBoundingClientRect();
@@ -98,14 +111,13 @@ function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCa
     })
     .slice(0, 120)
     .map((element) => {
-      const attrSelector = (name: string, value: string) => `[${name}="${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"]`;
       const findAncestorSelector = () => {
         let current = element.parentElement;
         while (current && current !== document.body && current !== document.documentElement) {
           if (current.id) {
             return attrSelector("id", current.id);
           }
-          const testId = current.getAttribute("data-testid") ?? current.getAttribute("data-test");
+          const testId = current.getAttribute("data-testid") || current.getAttribute("data-test");
           if (testId) {
             return attrSelector(current.hasAttribute("data-testid") ? "data-testid" : "data-test", testId);
           }
@@ -117,22 +129,31 @@ function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCa
       return {
         ancestorSelector: findAncestorSelector(),
         ariaLabel: element.getAttribute("aria-label"),
+        href: element instanceof HTMLAnchorElement ? element.href : element.getAttribute("href"),
         id: element.id,
         name: element.getAttribute("name"),
         placeholder: element.getAttribute("placeholder"),
         role: element.getAttribute("role"),
         tagName: element.tagName,
-        testId: element.getAttribute("data-testid") ?? element.getAttribute("data-test"),
-        text: element.innerText ?? element.textContent ?? "",
-        type: element.getAttribute("type"),
+        testId: element.getAttribute("data-testid") || element.getAttribute("data-test"),
+        text: element.innerText || element.textContent || "",
+        type: element.getAttribute("type")
       };
     });
+})()`;
+
+function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCandidateElement[] {
+  if (Array.isArray(testElements)) {
+    return testElements;
+  }
+  return [];
 }
 
-function toPerceptionCandidate(
+function toCandidateDraft(
   raw: RawCandidateElement,
   options: PagePerceptionOptions,
-): PerceptionCandidate | undefined {
+  pageFingerprint: string,
+): Omit<CandidateRecord, "candidateId"> | undefined {
   const tagName = raw.tagName.toLowerCase();
   const label = truncateText(
     [raw.ariaLabel, raw.placeholder, raw.name, raw.text].find((value) => value && value.trim())?.trim() ??
@@ -145,15 +166,64 @@ function toPerceptionCandidate(
     return undefined;
   }
 
-    return {
+  return {
+    ...(raw.href?.trim() ? { href: raw.href.trim() } : {}),
+    kind: inferCandidateKind(raw),
     label,
+    nearestStableContainer: raw.ancestorSelector ?? null,
+    pageFingerprint,
+    ...(raw.role ? { role: raw.role } : {}),
     selector: selector.value,
     selectorSource: selector.selectorSource,
     tagName,
+    text: raw.text,
   };
 }
 
-function chooseSelector(raw: RawCandidateElement): Pick<PerceptionCandidate, "selectorSource"> & { value: string } | null {
+// Repeated controls (e.g. an apply button on every list card) produce identical
+// internal selectors; collapse them and expose the count as ambiguity metadata.
+function dedupeCandidates(candidates: Array<Omit<CandidateRecord, "candidateId">>): Array<Omit<CandidateRecord, "candidateId">> {
+  const counts = new Map<string, number>();
+  for (const candidate of candidates) {
+    counts.set(candidate.selector, (counts.get(candidate.selector) ?? 0) + 1);
+  }
+
+  const seen = new Set<string>();
+  const deduped: Array<Omit<CandidateRecord, "candidateId">> = [];
+  for (const candidate of candidates) {
+    if (seen.has(candidate.selector)) {
+      continue;
+    }
+    seen.add(candidate.selector);
+    const occurrences = counts.get(candidate.selector) ?? 1;
+    deduped.push(occurrences > 1 ? { ...candidate, occurrences } : candidate);
+  }
+  return deduped;
+}
+
+function assignCandidateIds(candidates: Array<Omit<CandidateRecord, "candidateId">>): CandidateRecord[] {
+  return candidates.map((candidate, index) => ({
+    ...candidate,
+    candidateId: `c${index + 1}`,
+  }));
+}
+
+function inferCandidateKind(raw: RawCandidateElement): CandidateRecord["kind"] {
+  const tagName = raw.tagName.toLowerCase();
+  const role = raw.role?.toLowerCase();
+  if (tagName === "input" || tagName === "select" || tagName === "textarea") {
+    return "input";
+  }
+  if (role === "button" || role === "tab" || tagName === "button") {
+    return "button";
+  }
+  if (role === "link" || tagName === "a" || Boolean(raw.href)) {
+    return "link";
+  }
+  return "control";
+}
+
+function chooseSelector(raw: RawCandidateElement): Pick<CandidateRecord, "selectorSource"> & { value: string } | null {
   if (raw.id) {
     return { selectorSource: "id", value: `css=${cssIdSelector(raw.id)}` };
   }
@@ -186,11 +256,14 @@ function chooseSelector(raw: RawCandidateElement): Pick<PerceptionCandidate, "se
     .map((line) => line.trim())
     .find((line) => line.length > 0);
   if (firstTextLine) {
-    // Playwright text= does substring matching, so a single short line is far more
-    // robust than the element's full multiline innerText.
     return { selectorSource: "text", value: `text=${firstTextLine.slice(0, 80)}` };
   }
   return null;
+}
+
+function fingerprintPage(page: PagePerceptionPage | Page, ariaSnapshot: string): string {
+  const url = typeof (page as Partial<Page>).url === "function" ? (page as Page).url() : "";
+  return `${url}|${ariaSnapshot.slice(0, 512)}`;
 }
 
 function cssIdSelector(id: string): string {

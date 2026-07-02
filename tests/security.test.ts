@@ -40,7 +40,7 @@ describe("SecurityGate", () => {
     });
 
     const result = await gate.review({
-      arguments: { selector: "css=#checkout" },
+      arguments: { candidateId: "c-checkout" },
       task: "Add item to cart, do not pay",
       toolName: "click",
     });
@@ -69,7 +69,7 @@ describe("SecurityGate", () => {
     });
 
     const result = await gate.review({
-      arguments: { selector: "css=#search", text: "hot dog" },
+      arguments: { candidateId: "c-search", text: "hot dog" },
       task: "Find a hot dog",
       toolName: "type",
     });
@@ -91,7 +91,7 @@ describe("SecurityGate", () => {
     });
 
     const result = await gate.review({
-      arguments: { selector: "css=#confirm" },
+      arguments: { candidateId: "c-confirm" },
       task: "Confirm my order",
       toolName: "click",
     });
@@ -116,7 +116,7 @@ describe("SecurityGate", () => {
     });
 
     const result = await gate.review({
-      arguments: { selector: "css=#anything" },
+      arguments: { candidateId: "c-anything" },
       task: "Do something",
       toolName: "click",
     });

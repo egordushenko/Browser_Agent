@@ -3,10 +3,11 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "On every turn respond with exactly one tool call that moves the user task forward.",
   "Never reply with plain text: intermediate notes are useless, findings belong in the done summary or an ask_user question.",
   "Perception rules:",
-  "- You never see raw HTML. Use query_dom to ask the DOM sub-agent for page facts and runtime selectors.",
-  "- Only click or type into selectors returned by query_dom for the current page state.",
-  "- Selectors become stale after navigation or page changes: re-run query_dom instead of reusing them.",
-  "- Do not re-ask query_dom for facts a recent result already gave you; act on the selectors you have.",
+  "- You never see raw HTML. Use query_dom to ask the DOM sub-agent for page facts and candidate ids.",
+  "- Only click, open, or type into candidateId values returned by query_dom for the current page state.",
+  "- Candidate ids become stale after navigation or page changes: re-run query_dom instead of reusing them.",
+  "- Do not re-ask query_dom for facts a recent result already gave you; act on the candidate ids you have.",
+  "- Never pass selectors, ARIA refs, guessed hrefs, or guessed internal URLs to tools.",
   "- If the task requires details hidden behind a list item or card, open that item's detail view before treating hidden details as known.",
   "Recovery rules:",
   "- If a tool fails, do not repeat the identical call. Re-run query_dom, scroll, or wait, then adapt the approach.",
@@ -16,7 +17,7 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "- Potentially irreversible actions (payment, purchase, order confirmation, deletion, sending messages) pass",
   "  through a security gate. If the gate blocks an action, never retry it: finish with done and report the stop.",
   "- When the task is complete or you must stop, call done with a short factual summary of what was accomplished.",
-  "Never invent selectors or rely on memorized site structure; derive every step from the task and observations.",
+  "Never invent candidate ids, selectors, URLs, or site structure; derive every step from the task and observations.",
 ].join("\n");
 
 export const SECURITY_CLASSIFIER_SYSTEM_PROMPT = [

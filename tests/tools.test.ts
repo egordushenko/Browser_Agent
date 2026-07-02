@@ -9,6 +9,7 @@ describe("getToolSchemas", () => {
       "navigate",
       "query_dom",
       "click",
+      "open_candidate",
       "type",
       "scroll",
       "wait",
@@ -47,6 +48,9 @@ describe("getToolSchemas", () => {
         throw new Error("unexpected");
       },
       click: async () => {
+        throw new Error("unexpected");
+      },
+      openCandidate: async () => {
         throw new Error("unexpected");
       },
       type: async () => {
@@ -95,6 +99,9 @@ describe("executeToolCall", () => {
       click: async () => {
         throw new Error("unexpected");
       },
+      openCandidate: async () => {
+        throw new Error("unexpected");
+      },
       type: async () => {
         throw new Error("unexpected");
       },
@@ -135,7 +142,7 @@ describe("executeToolCall", () => {
     });
   });
 
-  test("delegates query_dom, click, and type to the browser runtime", async () => {
+  test("delegates query_dom, click, open_candidate, and type to the browser runtime", async () => {
     const actions: string[] = [];
     const runtime: BrowserToolRuntime = {
       navigate: async () => {
@@ -143,15 +150,23 @@ describe("executeToolCall", () => {
       },
       queryDom: async (question) => {
         actions.push(`query:${question}`);
-        return { answer: "Found", selector: "css=#search", confidence: "high" };
+        return {
+          answer: "Found",
+          candidates: [{ candidateId: "c1", kind: "input", label: "Search", tagName: "input", text: "Search" }],
+          confidence: "high",
+        };
       },
-      click: async (selector) => {
-        actions.push(`click:${selector}`);
-        return { selector };
+      click: async (candidateId) => {
+        actions.push(`click:${candidateId}`);
+        return { candidateId };
       },
-      type: async (selector, text) => {
-        actions.push(`type:${selector}:${text}`);
-        return { selector, textLength: text.length };
+      openCandidate: async (candidateId) => {
+        actions.push(`open:${candidateId}`);
+        return { candidateId };
+      },
+      type: async (candidateId, text) => {
+        actions.push(`type:${candidateId}:${text}`);
+        return { candidateId, textLength: text.length };
       },
       scroll: async (direction, amount) => {
         actions.push(`scroll:${direction}:${amount}`);
@@ -176,9 +191,10 @@ describe("executeToolCall", () => {
     };
 
     await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "search field" } }, runtime);
-    await executeToolCall({ id: "c", name: "click", arguments: { selector: "css=#search" } }, runtime);
+    await executeToolCall({ id: "c", name: "click", arguments: { candidateId: "c1" } }, runtime);
+    await executeToolCall({ id: "o", name: "open_candidate", arguments: { candidateId: "c2" } }, runtime);
     await executeToolCall(
-      { id: "t", name: "type", arguments: { selector: "css=#search", text: "hot dog" } },
+      { id: "t", name: "type", arguments: { candidateId: "c1", text: "hot dog" } },
       runtime,
     );
     await executeToolCall({ id: "s", name: "scroll", arguments: { direction: "down", amount: 500 } }, runtime);
@@ -189,13 +205,46 @@ describe("executeToolCall", () => {
 
     expect(actions).toEqual([
       "query:search field",
-      "click:css=#search",
-      "type:css=#search:hot dog",
+      "click:c1",
+      "open:c2",
+      "type:c1:hot dog",
       "scroll:down:500",
       "wait:2",
       "read:visible prices",
       "ask:Need address?",
       "done:Finished",
     ]);
+  });
+
+  test("rejects legacy selector arguments for action tools", async () => {
+    const runtime: BrowserToolRuntime = {
+      navigate: async (url) => ({ url, title: "Example" }),
+      queryDom: async () => ({ answer: "Noop", confidence: "low" }),
+      click: async () => {
+        throw new Error("unexpected");
+      },
+      openCandidate: async () => {
+        throw new Error("unexpected");
+      },
+      type: async () => {
+        throw new Error("unexpected");
+      },
+      scroll: async (direction, amount) => ({ direction, amount }),
+      wait: async (seconds) => ({ seconds }),
+      readPage: async () => ({ answer: "Noop", confidence: "low" }),
+      askUser: async (question) => ({ question }),
+      done: async (summary) => ({ summary }),
+    };
+
+    const result = await executeToolCall(
+      { id: "legacy", name: "click", arguments: { selector: "css=#search" } },
+      runtime,
+    );
+
+    expect(result).toMatchObject({
+      ok: false,
+      toolName: "click",
+      content: 'Tool argument "candidateId" must be a non-empty string',
+    });
   });
 });

@@ -1,20 +1,22 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Page } from "playwright";
-import { collectPagePerception } from "../browser/perception.js";
+import { CandidateRegistry } from "../browser/candidate-registry.js";
+import { collectPagePerceptionWithRegistry } from "../browser/perception.js";
 import type { DomAgent } from "../subagents/dom-agent.js";
 import type { DomQueryResult, ToolCall, ToolResult, ToolSchema } from "../types.js";
 
 export interface BrowserToolRuntime {
   askUser: (question: string) => Promise<{ question: string; answer?: string }>;
-  click: (selector: string) => Promise<{ selector: string }>;
+  click: (candidateId: string) => Promise<{ candidateId: string }>;
   done: (summary: string) => Promise<{ summary: string }>;
   navigate: (url: string) => Promise<{ title: string; url: string }>;
+  openCandidate: (candidateId: string) => Promise<{ candidateId: string; href?: string }>;
   queryDom: (question: string) => Promise<DomQueryResult>;
   readPage: (question?: string) => Promise<DomQueryResult>;
   screenshot?: (fullPage: boolean) => Promise<{ path: string }>;
   scroll: (direction: string, amount: number) => Promise<{ amount: number; direction: string }>;
-  type: (selector: string, text: string) => Promise<{ selector: string; textLength: number }>;
+  type: (candidateId: string, text: string) => Promise<{ candidateId: string; textLength: number }>;
   wait: (seconds: number) => Promise<{ seconds: number }>;
 }
 
@@ -40,7 +42,7 @@ export function getToolSchemas(): ToolSchema[] {
     {
       type: "function",
       name: "query_dom",
-      description: "Ask the DOM sub-agent for relevant page text and runtime selectors.",
+      description: "Ask the DOM sub-agent for relevant page facts and clickable candidate ids.",
       strict: true,
       parameters: {
         type: "object",
@@ -57,38 +59,55 @@ export function getToolSchemas(): ToolSchema[] {
     {
       type: "function",
       name: "click",
-      description: "Click a selector returned by the DOM sub-agent.",
+      description: "Click a candidateId returned by query_dom for the current page.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
-          selector: {
+          candidateId: {
             type: "string",
-            description: "Runtime selector returned by query_dom.",
+            description: "candidateId returned by query_dom for the current page.",
           },
         },
-        required: ["selector"],
+        required: ["candidateId"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "open_candidate",
+      description: "Open a link/card candidateId returned by query_dom for the current page.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          candidateId: {
+            type: "string",
+            description: "candidateId returned by query_dom for the current page.",
+          },
+        },
+        required: ["candidateId"],
         additionalProperties: false,
       },
     },
     {
       type: "function",
       name: "type",
-      description: "Type text into a selector returned by the DOM sub-agent.",
+      description: "Type text into a candidateId returned by query_dom for the current page.",
       strict: true,
       parameters: {
         type: "object",
         properties: {
-          selector: {
+          candidateId: {
             type: "string",
-            description: "Runtime selector returned by query_dom.",
+            description: "candidateId returned by query_dom for the current page.",
           },
           text: {
             type: "string",
             description: "Text to enter.",
           },
         },
-        required: ["selector", "text"],
+        required: ["candidateId", "text"],
         additionalProperties: false,
       },
     },
@@ -220,20 +239,28 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
       };
     }
     if (call.name === "click") {
-      const selector = readRequiredString(call.arguments, "selector");
+      const candidateId = readRequiredString(call.arguments, "candidateId");
       return {
         ok: true,
         toolName: call.name,
-        content: await runtime.click(selector),
+        content: await runtime.click(candidateId),
+      };
+    }
+    if (call.name === "open_candidate") {
+      const candidateId = readRequiredString(call.arguments, "candidateId");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.openCandidate(candidateId),
       };
     }
     if (call.name === "type") {
-      const selector = readRequiredString(call.arguments, "selector");
+      const candidateId = readRequiredString(call.arguments, "candidateId");
       const text = readRequiredString(call.arguments, "text");
       return {
         ok: true,
         toolName: call.name,
-        content: await runtime.type(selector, text),
+        content: await runtime.type(candidateId, text),
       };
     }
     if (call.name === "scroll") {
@@ -308,6 +335,7 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
 }
 
 export interface BrowserToolRuntimeOptions {
+  allowedNavigationUrls?: string[];
   askUser?: (question: string) => Promise<string>;
   screenshotDir?: string;
 }
@@ -318,6 +346,7 @@ export function createBrowserToolRuntime(
   options?: BrowserToolRuntimeOptions,
 ): BrowserToolRuntime {
   let screenshotCounter = 0;
+  let candidateRegistry = CandidateRegistry.empty();
   return {
     askUser: async (question) => {
       if (!options?.askUser) {
@@ -325,9 +354,10 @@ export function createBrowserToolRuntime(
       }
       return { question, answer: await options.askUser(question) };
     },
-    click: async (selector) => {
-      await (await resolveLocator(page, selector)).click();
-      return { selector };
+    click: async (candidateId) => {
+      const candidate = candidateRegistry.get(candidateId);
+      await (await resolveLocator(page, candidate.selector)).click();
+      return { candidateId };
     },
     done: async (summary) => ({ summary }),
     screenshot: async (fullPage) => {
@@ -340,44 +370,65 @@ export function createBrowserToolRuntime(
       return { path: filePath };
     },
     navigate: async (url) => {
+      assertNavigationAllowed(url, options?.allowedNavigationUrls ?? [], candidateRegistry);
       await page.goto(url);
       return {
         title: await page.title(),
         url: page.url(),
       };
     },
+    openCandidate: async (candidateId) => {
+      const candidate = candidateRegistry.get(candidateId);
+      await (await resolveLocator(page, candidate.selector)).click();
+      return { candidateId, href: candidate.href };
+    },
     queryDom: async (question) => {
-      if (!domAgent) {
-        throw new Error("DOM sub-agent is not configured");
-      }
-      return domAgent.query({
-        question,
-        perception: await collectPagePerception(page, {
-          ariaSnapshotTimeoutMs: 5000,
+      const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
+        ariaSnapshotTimeoutMs: 5000,
         maxCandidateTextLength: 120,
-        }),
       });
+      candidateRegistry = registry;
+      if (!domAgent) {
+        return {
+          answer: "Collected current page candidates.",
+          candidates: perception.candidates,
+          confidence: "medium",
+        };
+      }
+      const result = await domAgent.query({
+        question,
+        perception,
+      });
+      return { ...result, candidates: perception.candidates };
     },
     readPage: async (question) => {
-      if (!domAgent) {
-        throw new Error("DOM sub-agent is not configured");
-      }
-      return domAgent.query({
-        question: question ?? "Extract the relevant visible text from the current page.",
-        perception: await collectPagePerception(page, {
-          ariaSnapshotTimeoutMs: 5000,
-          maxCandidateTextLength: 120,
-        }),
+      const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
+        ariaSnapshotTimeoutMs: 5000,
+        maxCandidateTextLength: 120,
       });
+      candidateRegistry = registry;
+      if (!domAgent) {
+        return {
+          answer: perception.ariaSnapshot,
+          candidates: perception.candidates,
+          confidence: "medium",
+        };
+      }
+      const result = await domAgent.query({
+        question: question ?? "Extract the relevant visible text from the current page.",
+        perception,
+      });
+      return { ...result, candidates: perception.candidates };
     },
     scroll: async (direction, amount) => {
       const deltaY = direction === "up" ? -amount : amount;
       await page.mouse.wheel(0, deltaY);
       return { amount, direction };
     },
-    type: async (selector, text) => {
-      await (await resolveLocator(page, selector)).fill(text);
-      return { selector, textLength: text.length };
+    type: async (candidateId, text) => {
+      const candidate = candidateRegistry.get(candidateId);
+      await (await resolveLocator(page, candidate.selector)).fill(text);
+      return { candidateId, textLength: text.length };
     },
     wait: async (seconds) => {
       await page.waitForTimeout(seconds * 1000);
@@ -400,6 +451,34 @@ async function resolveLocator(page: Page, selector: string) {
     return page.getByText(text);
   }
   return page.locator(normalizedSelector);
+}
+
+function assertNavigationAllowed(url: string, allowedNavigationUrls: string[], candidateRegistry: CandidateRegistry): void {
+  if (allowedNavigationUrls.length === 0) {
+    return;
+  }
+  const normalizedUrl = normalizeUrl(url);
+  if (!normalizedUrl) {
+    throw new Error(`Navigation URL must be absolute: ${url}`);
+  }
+  if (candidateRegistry.hasHref(normalizedUrl)) {
+    return;
+  }
+  for (const allowed of allowedNavigationUrls) {
+    const normalizedAllowed = normalizeUrl(allowed);
+    if (normalizedAllowed && normalizedUrl === normalizedAllowed) {
+      return;
+    }
+  }
+  throw new Error(`Navigation URL "${url}" is not allowed unless it was explicitly provided by the task or observed in DOM.`);
+}
+
+function normalizeUrl(value: string): string | null {
+  try {
+    return new URL(value).toString();
+  } catch {
+    return null;
+  }
 }
 
 function normalizeRuntimeSelector(selector: string): string {

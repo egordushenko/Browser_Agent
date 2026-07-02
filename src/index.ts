@@ -2,6 +2,7 @@ import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
 import { runAgentTask } from "./agent/orchestrator.js";
+import { extractAllowedNavigationUrls } from "./agent/navigation-policy.js";
 import { SecurityGate } from "./agent/security.js";
 import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
         }
 
         const runtime = createBrowserToolRuntime(session.page, domAgent, {
+          allowedNavigationUrls: extractAllowedNavigationUrls(task),
           askUser: async (question) => io.question(`Agent question: ${question}\nanswer> `),
           screenshotDir: config.browser.screenshotDir,
         });

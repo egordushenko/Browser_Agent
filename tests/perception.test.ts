@@ -43,10 +43,11 @@ describe("collectPagePerception", () => {
     expect(perception.ariaSnapshot).toBe('- textbox "Search" [ref=e2]');
     expect(perception.candidates).toEqual([
       {
+        candidateId: "c1",
+        kind: "input",
         label: "Search",
-        selector: "css=#search",
-        selectorSource: "id",
         tagName: "input",
+        text: "",
       },
     ]);
   });
@@ -74,8 +75,12 @@ describe("collectPagePerception", () => {
 
     const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 200 });
 
-    expect(perception.candidates[0].selector).toBe("text=Постоянная работа, подработка");
-    expect(perception.candidates[0].selector).not.toContain("\n");
+    expect(perception.candidates[0]).toMatchObject({
+      candidateId: "c1",
+      label: "Постоянная работа, подработка\nAI-first Product Engineer · Full-Stack\n80 000 ₽",
+      text: "  \nПостоянная работа, подработка\nAI-first Product Engineer · Full-Stack\n80 000 ₽",
+    });
+    expect(JSON.stringify(perception.candidates[0])).not.toContain("selector");
   });
 
   test("collapses repeated identical selectors into one candidate with an occurrences count", async () => {
@@ -103,9 +108,10 @@ describe("collectPagePerception", () => {
       {
         label: "Откликнуться",
         occurrences: 3,
-        selector: "text=Откликнуться",
-        selectorSource: "text",
+        candidateId: "c1",
+        kind: "button",
         tagName: "button",
+        text: "Откликнуться",
       },
     ]);
   });
@@ -149,15 +155,19 @@ describe("collectPagePerception", () => {
     expect(perception.candidates).toEqual([
       {
         label: "Apply",
-        selector: 'css=#job-1 >> role=button[name="Apply"]',
-        selectorSource: "role",
+        candidateId: "c1",
+        kind: "button",
+        role: "button",
         tagName: "a",
+        text: "Apply",
       },
       {
         label: "Apply",
-        selector: 'css=#job-2 >> role=button[name="Apply"]',
-        selectorSource: "role",
+        candidateId: "c2",
+        kind: "button",
+        role: "button",
         tagName: "a",
+        text: "Apply",
       },
     ]);
   });
@@ -188,9 +198,11 @@ describe("collectPagePerception", () => {
     expect(perception.candidates).toEqual([
       {
         label: "Resume",
-        selector: 'role=tab[name="Resume"]',
-        selectorSource: "role",
+        candidateId: "c1",
+        kind: "button",
+        role: "tab",
         tagName: "button",
+        text: "Resume",
       },
     ]);
   });

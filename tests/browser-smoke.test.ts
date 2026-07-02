@@ -16,11 +16,11 @@ const FIXTURE_HTML = `<!DOCTYPE html>
       <li>Classic hot dog <button aria-label="Add classic hot dog to cart">Add</button></li>
     </ul>
     <section id="job-1">
-      <a href="/job-1">Junior Python Engineer</a>
+      <a href="#job-1-detail">Junior Python Engineer</a>
       <a tabindex="0" role="button" href="#apply-job-1">Apply</a>
     </section>
     <section id="job-2">
-      <a href="/job-2">AI Engineer</a>
+      <a href="#job-2-detail">AI Engineer</a>
       <a tabindex="0" role="button" href="#apply-job-2">Apply</a>
     </section>
     <button id="vanishing">Vanishing button</button>
@@ -69,40 +69,43 @@ describe("browser smoke on a local fixture", () => {
     });
 
     expect(perception.ariaSnapshot).toContain("Search products");
-    const selectors = perception.candidates.map((candidate) => candidate.selector);
-    expect(selectors).toContain("css=#search");
-    expect(selectors).toContain("css=#resume-tab");
-    expect(selectors).toContain('css=[data-testid="search-submit"]');
-    expect(selectors).toContain('css=[aria-label="Add classic hot dog to cart"]');
+    expect(perception.candidates.map((candidate) => candidate.candidateId)).toEqual(
+      perception.candidates.map((_, index) => `c${index + 1}`),
+    );
+    expect(perception.candidates.some((candidate) => candidate.label === "Search products")).toBe(true);
+    expect(perception.candidates.some((candidate) => candidate.label === "Search")).toBe(true);
+    expect(JSON.stringify(perception.candidates)).not.toContain("selector");
   }, 30_000);
 
-  test("click and type work through runtime selectors and mutate the page", async (ctx) => {
+  test("click and type work through candidate ids and mutate the page", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);
     const runtime = createBrowserToolRuntime(page);
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
 
     const typed = await executeToolCall(
-      { id: "t", name: "type", arguments: { selector: "css=#search", text: "hot dog" } },
+      { id: "t", name: "type", arguments: { candidateId: "c1", text: "hot dog" } },
       runtime,
     );
     expect(typed.ok).toBe(true);
     expect(await page.inputValue("#search")).toBe("hot dog");
 
     const clicked = await executeToolCall(
-      { id: "c", name: "click", arguments: { selector: 'css=[aria-label="Add classic hot dog to cart"]' } },
+      { id: "c", name: "click", arguments: { candidateId: "c5" } },
       runtime,
     );
     expect(clicked.ok).toBe(true);
     expect(await page.textContent("#cart-count")).toBe("1");
   }, 30_000);
 
-  test("role selectors click the intended control when text is ambiguous", async (ctx) => {
+  test("candidate ids click the intended role control when text is ambiguous", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);
     const runtime = createBrowserToolRuntime(page);
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
 
     const clicked = await executeToolCall(
-      { id: "tab", name: "click", arguments: { selector: 'role=tab[name="Resume"]' } },
+      { id: "tab", name: "click", arguments: { candidateId: "c3" } },
       runtime,
     );
 
@@ -110,13 +113,14 @@ describe("browser smoke on a local fixture", () => {
     expect(await page.textContent("#active-tab")).toBe("resume");
   }, 30_000);
 
-  test("scoped role selectors click a repeated control inside a specific card", async (ctx) => {
+  test("candidate ids click a repeated control inside a specific card", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);
     const runtime = createBrowserToolRuntime(page);
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
 
     const clicked = await executeToolCall(
-      { id: "apply-2", name: "click", arguments: { selector: 'css=[id="job-2"] >> role=button[name="Apply"]' } },
+      { id: "apply-2", name: "click", arguments: { candidateId: "c9" } },
       runtime,
     );
 
@@ -124,7 +128,7 @@ describe("browser smoke on a local fixture", () => {
     expect(page.url()).toContain("#apply-job-2");
   }, 30_000);
 
-  test("role selectors ignore aria snapshot refs that are not Playwright runtime attributes", async (ctx) => {
+  test("legacy selector arguments are rejected before Playwright sees them", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);
     const runtime = createBrowserToolRuntime(page);
@@ -134,22 +138,40 @@ describe("browser smoke on a local fixture", () => {
       runtime,
     );
 
-    expect(clicked.ok).toBe(true);
-    expect(await page.textContent("#active-tab")).toBe("resume");
+    expect(clicked.ok).toBe(false);
+    expect(String(clicked.content)).toContain('Tool argument "candidateId"');
   }, 30_000);
 
-  test("text selectors prefer exact visible text before substring matching", async (ctx) => {
+  test("guessed internal navigation is blocked when the task only allowed the site root", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);
-    const runtime = createBrowserToolRuntime(page);
+    const runtime = createBrowserToolRuntime(page, undefined, {
+      allowedNavigationUrls: ["https://hh.ru/"],
+    });
 
-    const clicked = await executeToolCall(
-      { id: "text-tab", name: "click", arguments: { selector: "text=Resume" } },
+    const result = await executeToolCall(
+      { id: "nav", name: "navigate", arguments: { url: "https://hh.ru/account/resumes" } },
       runtime,
     );
 
-    expect(clicked.ok).toBe(true);
-    expect(await page.textContent("#active-tab")).toBe("resume");
+    expect(result.ok).toBe(false);
+    expect(String(result.content)).toContain("not allowed unless it was explicitly provided by the task or observed in DOM");
+    expect(page.url()).not.toContain("hh.ru/account/resumes");
+  }, 30_000);
+
+  test("open_candidate opens a link candidate by id", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
+
+    const opened = await executeToolCall(
+      { id: "open-job", name: "open_candidate", arguments: { candidateId: "c6" } },
+      runtime,
+    );
+
+    expect(opened.ok).toBe(true);
+    expect(page.url()).toContain("#job-1-detail");
   }, 30_000);
 
   test("a stale selector surfaces as a recoverable tool error", async (ctx) => {
@@ -158,11 +180,12 @@ describe("browser smoke on a local fixture", () => {
     const runtime = createBrowserToolRuntime(page);
     page.setDefaultTimeout(1_000);
 
-    const first = await executeToolCall({ id: "v1", name: "click", arguments: { selector: "css=#vanishing" } }, runtime);
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
+    const first = await executeToolCall({ id: "v1", name: "click", arguments: { candidateId: "c10" } }, runtime);
     expect(first.ok).toBe(true);
 
     const second = await executeToolCall(
-      { id: "v2", name: "click", arguments: { selector: "css=#vanishing" } },
+      { id: "v2", name: "click", arguments: { candidateId: "c10" } },
       runtime,
     );
     expect(second.ok).toBe(false);

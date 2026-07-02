@@ -35,6 +35,9 @@ describe("runAgentStep", () => {
         click: async () => {
           throw new Error("unexpected");
         },
+        openCandidate: async () => {
+          throw new Error("unexpected");
+        },
         type: async () => {
           throw new Error("unexpected");
         },
@@ -62,6 +65,7 @@ describe("runAgentStep", () => {
       "navigate",
       "query_dom",
       "click",
+      "open_candidate",
       "type",
       "scroll",
       "wait",

@@ -41,12 +41,16 @@ export interface ToolResult {
 }
 
 export interface PerceptionCandidate {
+  candidateId: string;
+  href?: string;
+  kind: "button" | "input" | "link" | "control";
   label: string;
+  objectHint?: string;
   /** Set when the selector matches several elements on the page (ambiguous). */
   occurrences?: number;
-  selector: string;
-  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "role" | "text";
+  role?: string;
   tagName: string;
+  text: string;
 }
 
 export interface PagePerception {
@@ -56,7 +60,8 @@ export interface PagePerception {
 
 export interface DomQueryResult {
   answer: string;
+  candidateId?: string;
+  candidates?: PerceptionCandidate[];
   confidence: "low" | "medium" | "high";
-  selector?: string;
   usage?: Usage;
 }

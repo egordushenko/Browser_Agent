@@ -3,18 +3,18 @@ import { DomAgent } from "../src/subagents/dom-agent.js";
 import type { LLMProvider } from "../src/llm/provider.js";
 
 describe("DomAgent", () => {
-  test("answers a query with selector data from compact perception", async () => {
+  test("answers a query with candidateId data from compact perception", async () => {
     const provider: LLMProvider = {
       complete: async (request) => {
         expect(request.tools).toHaveLength(0);
-        expect(request.system).toContain("Prefer role/css/id/data-testid/name/aria-label selectors over text selectors");
-        expect(request.system).toContain("Do not return an ambiguous candidate as selector");
+        expect(request.system).toContain("Use candidateId exactly as it appears in candidates");
+        expect(request.system).toContain("Never invent selectors, URLs, refs, hrefs, or candidate ids");
         expect(request.messages[0].content).toContain("find search field");
-        expect(request.messages[0].content).toContain("css=#search");
+        expect(request.messages[0].content).toContain("c1");
         return {
           text: JSON.stringify({
             answer: "Search field is available.",
-            selector: "css=#search",
+            candidateId: "c1",
             confidence: "high",
           }),
           usage: { inputTokens: 20, outputTokens: 8, totalTokens: 28 },
@@ -31,8 +31,9 @@ describe("DomAgent", () => {
           {
             tagName: "input",
             label: "Search",
-            selector: "css=#search",
-            selectorSource: "id",
+            candidateId: "c1",
+            kind: "input",
+            text: "",
           },
         ],
       },
@@ -40,7 +41,7 @@ describe("DomAgent", () => {
 
     expect(result).toEqual({
       answer: "Search field is available.",
-      selector: "css=#search",
+      candidateId: "c1",
       confidence: "high",
       usage: { inputTokens: 20, outputTokens: 8, totalTokens: 28 },
     });
@@ -49,7 +50,7 @@ describe("DomAgent", () => {
   test("tolerates fenced or malformed sub-agent output instead of failing the tool", async () => {
     const fencedProvider: LLMProvider = {
       complete: async () => ({
-        text: '```json\n{"answer": "Found it.", "selector": "css=#go", "confidence": "medium"}\n```',
+        text: '```json\n{"answer": "Found it.", "candidateId": "c2", "confidence": "medium"}\n```',
         usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
       }),
     };
@@ -57,7 +58,7 @@ describe("DomAgent", () => {
       question: "find button",
       perception: { ariaSnapshot: "-", candidates: [] },
     });
-    expect(fenced).toMatchObject({ answer: "Found it.", selector: "css=#go", confidence: "medium" });
+    expect(fenced).toMatchObject({ answer: "Found it.", candidateId: "c2", confidence: "medium" });
 
     const brokenProvider: LLMProvider = {
       complete: async () => ({
@@ -76,7 +77,7 @@ describe("DomAgent", () => {
     const provider: LLMProvider = {
       complete: async () => ({
         text: JSON.stringify({
-          answer: JSON.stringify({ answer: "Резюме найдено", selector: "text=AI-first Product Engineer", confidence: 0.86 }),
+          answer: JSON.stringify({ answer: "Резюме найдено", candidateId: "c3", confidence: 0.86 }),
           confidence: "low",
         }),
         usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
@@ -90,7 +91,7 @@ describe("DomAgent", () => {
 
     expect(result).toMatchObject({
       answer: "Резюме найдено",
-      selector: "text=AI-first Product Engineer",
+      candidateId: "c3",
       confidence: "high",
     });
   });

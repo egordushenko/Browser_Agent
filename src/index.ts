@@ -7,6 +7,7 @@ import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
 import { DomAgent } from "./subagents/dom-agent.js";
+import { formatForLog } from "./terminal-format.js";
 import type { Usage } from "./types.js";
 
 async function main(): Promise<void> {
@@ -121,14 +122,6 @@ async function main(): Promise<void> {
   } finally {
     await close();
   }
-}
-
-function formatForLog(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (!text) {
-    return "";
-  }
-  return text.length > 600 ? `${text.slice(0, 600)}...` : text;
 }
 
 function addUsage(a: Usage, b: Usage): Usage {

@@ -7,6 +7,7 @@ describe("truncateText", () => {
     expect(truncateText("abcdef", 4)).toBe("abcd...");
     expect(truncateText("abc", 4)).toBe("abc");
   });
+
 });
 
 describe("collectPagePerception", () => {
@@ -104,6 +105,39 @@ describe("collectPagePerception", () => {
         occurrences: 3,
         selector: "text=Откликнуться",
         selectorSource: "text",
+        tagName: "button",
+      },
+    ]);
+  });
+
+  test("prefers role selectors for controls whose text is not unique enough", async () => {
+    const page: PagePerceptionPage = {
+      locator: () => ({
+        ariaSnapshot: async () => '- tab "Resume" [ref=e2]',
+      }),
+      evaluate: async (fn) =>
+        fn([
+          {
+            tagName: "BUTTON",
+            id: "",
+            text: "Resume",
+            role: "tab",
+            ariaLabel: null,
+            testId: null,
+            name: null,
+            placeholder: null,
+            type: null,
+          },
+        ]),
+    };
+
+    const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 40 });
+
+    expect(perception.candidates).toEqual([
+      {
+        label: "Resume",
+        selector: 'role=tab[name="Resume"]',
+        selectorSource: "role",
         tagName: "button",
       },
     ]);

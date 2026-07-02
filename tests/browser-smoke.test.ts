@@ -9,12 +9,19 @@ const FIXTURE_HTML = `<!DOCTYPE html>
   <body>
     <input id="search" placeholder="Search products" />
     <button data-testid="search-submit">Search</button>
+    <button role="tab" aria-selected="false" id="resume-tab">Resume</button>
+    <button>Create Resume</button>
+    <p>Found 12 matching jobs for resume</p>
     <ul>
       <li>Classic hot dog <button aria-label="Add classic hot dog to cart">Add</button></li>
     </ul>
     <button id="vanishing">Vanishing button</button>
+    <output id="active-tab">jobs</output>
     <output id="cart-count">0</output>
     <script>
+      document.getElementById("resume-tab").addEventListener("click", () => {
+        document.getElementById("active-tab").textContent = "resume";
+      });
       document.querySelector('[aria-label="Add classic hot dog to cart"]').addEventListener("click", () => {
         const cart = document.getElementById("cart-count");
         cart.textContent = String(Number(cart.textContent) + 1);
@@ -56,6 +63,7 @@ describe("browser smoke on a local fixture", () => {
     expect(perception.ariaSnapshot).toContain("Search products");
     const selectors = perception.candidates.map((candidate) => candidate.selector);
     expect(selectors).toContain("css=#search");
+    expect(selectors).toContain("css=#resume-tab");
     expect(selectors).toContain('css=[data-testid="search-submit"]');
     expect(selectors).toContain('css=[aria-label="Add classic hot dog to cart"]');
   }, 30_000);
@@ -78,6 +86,34 @@ describe("browser smoke on a local fixture", () => {
     );
     expect(clicked.ok).toBe(true);
     expect(await page.textContent("#cart-count")).toBe("1");
+  }, 30_000);
+
+  test("role selectors click the intended control when text is ambiguous", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const clicked = await executeToolCall(
+      { id: "tab", name: "click", arguments: { selector: 'role=tab[name="Resume"]' } },
+      runtime,
+    );
+
+    expect(clicked.ok).toBe(true);
+    expect(await page.textContent("#active-tab")).toBe("resume");
+  }, 30_000);
+
+  test("text selectors prefer exact visible text before substring matching", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const clicked = await executeToolCall(
+      { id: "text-tab", name: "click", arguments: { selector: "text=Resume" } },
+      runtime,
+    );
+
+    expect(clicked.ok).toBe(true);
+    expect(await page.textContent("#active-tab")).toBe("resume");
   }, 30_000);
 
   test("a stale selector surfaces as a recoverable tool error", async (ctx) => {

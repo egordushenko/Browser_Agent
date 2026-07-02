@@ -146,6 +146,17 @@ function chooseSelector(raw: RawCandidateElement): Pick<PerceptionCandidate, "se
   if (raw.ariaLabel) {
     return { selectorSource: "aria-label", value: `css=[aria-label="${escapeAttributeValue(raw.ariaLabel)}"]` };
   }
+  if (raw.role) {
+    const accessibleName = [raw.ariaLabel, raw.text]
+      .find((value) => value && value.trim().length > 0)
+      ?.trim()
+      .split("\n")
+      .map((line) => line.trim())
+      .find((line) => line.length > 0);
+    if (accessibleName) {
+      return { selectorSource: "role", value: `role=${raw.role}[name="${escapeAttributeValue(accessibleName)}"]` };
+    }
+  }
   const firstTextLine = raw.text
     .split("\n")
     .map((line) => line.trim())

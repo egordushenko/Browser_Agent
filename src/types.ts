@@ -45,7 +45,7 @@ export interface PerceptionCandidate {
   /** Set when the selector matches several elements on the page (ambiguous). */
   occurrences?: number;
   selector: string;
-  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "text";
+  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "role" | "text";
   tagName: string;
 }
 

@@ -326,7 +326,7 @@ export function createBrowserToolRuntime(
       return { question, answer: await options.askUser(question) };
     },
     click: async (selector) => {
-      await resolveLocator(page, selector).click();
+      await (await resolveLocator(page, selector)).click();
       return { selector };
     },
     done: async (summary) => ({ summary }),
@@ -376,7 +376,7 @@ export function createBrowserToolRuntime(
       return { amount, direction };
     },
     type: async (selector, text) => {
-      await resolveLocator(page, selector).fill(text);
+      await (await resolveLocator(page, selector)).fill(text);
       return { selector, textLength: text.length };
     },
     wait: async (seconds) => {
@@ -386,12 +386,17 @@ export function createBrowserToolRuntime(
   };
 }
 
-function resolveLocator(page: Page, selector: string) {
+async function resolveLocator(page: Page, selector: string) {
   if (selector.startsWith("css=")) {
     return page.locator(selector.slice("css=".length));
   }
   if (selector.startsWith("text=")) {
-    return page.getByText(selector.slice("text=".length));
+    const text = selector.slice("text=".length);
+    const exact = page.getByText(text, { exact: true });
+    if ((await exact.count()) === 1) {
+      return exact;
+    }
+    return page.getByText(text);
   }
   return page.locator(selector);
 }

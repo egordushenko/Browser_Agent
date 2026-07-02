@@ -7,6 +7,8 @@ describe("DomAgent", () => {
     const provider: LLMProvider = {
       complete: async (request) => {
         expect(request.tools).toHaveLength(0);
+        expect(request.system).toContain("Prefer role/css/id/data-testid/name/aria-label selectors over text selectors");
+        expect(request.system).toContain("Do not return an ambiguous candidate as selector");
         expect(request.messages[0].content).toContain("find search field");
         expect(request.messages[0].content).toContain("css=#search");
         return {

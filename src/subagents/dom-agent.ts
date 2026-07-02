@@ -17,6 +17,8 @@ export class DomAgent {
         'Return one flat strict JSON object: {"answer": string, "selector": string?, "confidence": "low"|"medium"|"high"}.',
         "Do not nest JSON inside the answer field and do not wrap the object in code fences.",
         "Use selectors exactly as they appear in candidates when a selector is needed.",
+        "A candidate with occurrences > 1 matches several elements at once; call that out as ambiguous",
+        "and suggest a unique selector or an intermediate step (e.g. open the specific card first).",
       ].join("\n"),
       messages: [
         {

@@ -6,6 +6,7 @@ export const ORCHESTRATOR_SYSTEM_PROMPT = [
   "- You never see raw HTML. Use query_dom to ask the DOM sub-agent for page facts and runtime selectors.",
   "- Only click or type into selectors returned by query_dom for the current page state.",
   "- Selectors become stale after navigation or page changes: re-run query_dom instead of reusing them.",
+  "- Do not re-ask query_dom for facts a recent result already gave you; act on the selectors you have.",
   "Recovery rules:",
   "- If a tool fails, do not repeat the identical call. Re-run query_dom, scroll, or wait, then adapt the approach.",
   "- If the page seems incomplete, wait briefly or scroll before concluding an element is missing.",

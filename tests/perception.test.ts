@@ -76,4 +76,36 @@ describe("collectPagePerception", () => {
     expect(perception.candidates[0].selector).toBe("text=Постоянная работа, подработка");
     expect(perception.candidates[0].selector).not.toContain("\n");
   });
+
+  test("collapses repeated identical selectors into one candidate with an occurrences count", async () => {
+    const applyButton = {
+      tagName: "BUTTON",
+      id: "",
+      text: "Откликнуться",
+      role: null,
+      ariaLabel: null,
+      testId: null,
+      name: null,
+      placeholder: null,
+      type: null,
+    };
+    const page: PagePerceptionPage = {
+      locator: () => ({
+        ariaSnapshot: async () => "-",
+      }),
+      evaluate: async (fn) => fn([applyButton, { ...applyButton }, { ...applyButton }]),
+    };
+
+    const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 40 });
+
+    expect(perception.candidates).toEqual([
+      {
+        label: "Откликнуться",
+        occurrences: 3,
+        selector: "text=Откликнуться",
+        selectorSource: "text",
+        tagName: "button",
+      },
+    ]);
+  });
 });

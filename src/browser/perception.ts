@@ -35,10 +35,33 @@ export async function collectPagePerception(
 
   return {
     ariaSnapshot,
-    candidates: rawCandidates
-      .map((candidate: RawCandidateElement) => toPerceptionCandidate(candidate, options))
-      .filter(isDefined),
+    candidates: dedupeCandidates(
+      rawCandidates
+        .map((candidate: RawCandidateElement) => toPerceptionCandidate(candidate, options))
+        .filter(isDefined),
+    ),
   };
+}
+
+// Repeated controls (e.g. an apply button on every list card) produce identical selectors;
+// collapse them into one candidate and expose the count so the sub-agent knows it is ambiguous.
+function dedupeCandidates(candidates: PerceptionCandidate[]): PerceptionCandidate[] {
+  const counts = new Map<string, number>();
+  for (const candidate of candidates) {
+    counts.set(candidate.selector, (counts.get(candidate.selector) ?? 0) + 1);
+  }
+
+  const seen = new Set<string>();
+  const deduped: PerceptionCandidate[] = [];
+  for (const candidate of candidates) {
+    if (seen.has(candidate.selector)) {
+      continue;
+    }
+    seen.add(candidate.selector);
+    const occurrences = counts.get(candidate.selector) ?? 1;
+    deduped.push(occurrences > 1 ? { ...candidate, occurrences } : candidate);
+  }
+  return deduped;
 }
 
 export function truncateText(text: string, maxLength: number): string {

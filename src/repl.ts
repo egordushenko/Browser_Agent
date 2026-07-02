@@ -123,6 +123,12 @@ export async function startRepl(options: ReplOptions): Promise<void> {
           }
           line = `${line} ${extra}`;
         }
+        // A paste without a trailing newline leaves its last line stuck in the readline
+        // edit buffer; absorb it now or it will be prepended to the next typed input.
+        const fragment = takePendingFragment(rl);
+        if (fragment) {
+          line = `${line} ${fragment}`;
+        }
       }
 
       const shouldContinue = await handleReplInput(line, options, io);
@@ -133,6 +139,16 @@ export async function startRepl(options: ReplOptions): Promise<void> {
   } finally {
     rl.close();
   }
+}
+
+function takePendingFragment(rl: Interface): string | null {
+  const raw = (rl as unknown as { line?: unknown }).line;
+  if (typeof raw !== "string" || raw.trim().length === 0) {
+    return null;
+  }
+  // Ctrl+U clears readline's edit buffer (cursor sits at the end after a paste).
+  rl.write(null, { ctrl: true, name: "u" });
+  return raw.trim();
 }
 
 async function handleReplInput(input: string, options: ReplOptions, io: ReplIO): Promise<boolean> {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { Readable, Writable } from "node:stream";
+import { PassThrough, Readable, Writable } from "node:stream";
 import { formatTaskAcceptedLog, normalizeTaskInput, startRepl } from "../src/repl.js";
 
 describe("normalizeTaskInput", () => {
@@ -48,5 +48,73 @@ describe("startRepl", () => {
 
     expect(handledTasks).toEqual(["Open https://example.com"]);
     expect(outputChunks.join("")).toContain("Stopping Browser Agent.");
+  });
+
+  test("joins a multiline paste into one task in interactive mode", async () => {
+    const handledTasks: string[] = [];
+    const input = new PassThrough() as PassThrough & { isTTY: boolean };
+    input.isTTY = true;
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    const replDone = startRepl({
+      input,
+      output,
+      prompt: "> ",
+      pasteJoinMs: 40,
+      handleTask: async (task) => {
+        handledTasks.push(task);
+        input.write("exit\n");
+      },
+    });
+
+    input.write("Открой резюме и запомни\nзарплатные ожидания.\nЗатем найди вакансии.\n");
+
+    await Promise.race([
+      replDone,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("interactive REPL did not finish")), 2000);
+      }),
+    ]);
+
+    expect(handledTasks).toEqual(["Открой резюме и запомни зарплатные ожидания. Затем найди вакансии."]);
+  });
+
+  test("keeps mid-task question answers separate from the paste joiner", async () => {
+    const answers: string[] = [];
+    const input = new PassThrough() as PassThrough & { isTTY: boolean };
+    input.isTTY = true;
+    const output = new Writable({
+      write(_chunk, _encoding, callback) {
+        callback();
+      },
+    });
+
+    const replDone = startRepl({
+      input,
+      output,
+      prompt: "> ",
+      pasteJoinMs: 40,
+      handleTask: async (_task, io) => {
+        const promptPromise = io.question("Confirm? [y/N] ");
+        input.write("y\n");
+        answers.push(await promptPromise);
+        input.write("exit\n");
+      },
+    });
+
+    input.write("Click the pay button\n");
+
+    await Promise.race([
+      replDone,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error("interactive REPL did not finish")), 2000);
+      }),
+    ]);
+
+    expect(answers).toEqual(["y"]);
   });
 });

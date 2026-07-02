@@ -15,6 +15,8 @@ export interface ReplOptions {
   output: Writable;
   prompt: string;
   handleTask: (task: string, io: ReplIO) => Promise<void>;
+  /** Lines arriving within this window are treated as one multiline paste and joined. */
+  pasteJoinMs?: number;
 }
 
 export function normalizeTaskInput(input: string): NormalizedTaskInput {
@@ -32,6 +34,49 @@ export function formatTaskAcceptedLog(task: string): string {
   return `Task accepted: ${JSON.stringify(task)}`;
 }
 
+class LineQueue {
+  private readonly queue: string[] = [];
+  private readonly waiters: Array<(line: string) => void> = [];
+
+  push(line: string): void {
+    const waiter = this.waiters.shift();
+    if (waiter) {
+      waiter(line);
+    } else {
+      this.queue.push(line);
+    }
+  }
+
+  next(): Promise<string> {
+    const line = this.queue.shift();
+    if (line !== undefined) {
+      return Promise.resolve(line);
+    }
+    return new Promise((resolve) => this.waiters.push(resolve));
+  }
+
+  nextWithin(ms: number): Promise<string | null> {
+    const line = this.queue.shift();
+    if (line !== undefined) {
+      return Promise.resolve(line);
+    }
+    return new Promise((resolve) => {
+      const waiter = (value: string) => {
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => {
+        const index = this.waiters.indexOf(waiter);
+        if (index >= 0) {
+          this.waiters.splice(index, 1);
+        }
+        resolve(null);
+      }, ms);
+      this.waiters.push(waiter);
+    });
+  }
+}
+
 export async function startRepl(options: ReplOptions): Promise<void> {
   const isInteractive = Boolean((options.input as Readable & { isTTY?: boolean }).isTTY);
   const rl: Interface = createInterface({
@@ -39,31 +84,50 @@ export async function startRepl(options: ReplOptions): Promise<void> {
     output: options.output,
     terminal: isInteractive,
   });
+  const pasteJoinMs = options.pasteJoinMs ?? 250;
 
   options.output.write("Enter a browser task, or type exit.\n");
 
-  // readline answers a pending question() before emitting a line to the iterator,
-  // so the same interface can serve mid-task questions in both modes.
+  const lines = new LineQueue();
+  rl.on("line", (line) => lines.push(line));
+  const closed = new Promise<null>((resolve) => rl.once("close", () => resolve(null)));
+  const nextLine = () => Promise.race([lines.next(), closed]);
+
+  // readline delivers buffered lines to us before the loop asks for the next task,
+  // so the same queue can also answer mid-task questions (ask_user, security confirm).
   const io: ReplIO = {
-    question: (prompt) => rl.question(prompt),
+    question: async (prompt) => {
+      options.output.write(prompt);
+      return (await nextLine()) ?? "";
+    },
   };
 
   try {
-    if (!isInteractive) {
-      for await (const answer of rl) {
-        const shouldContinue = await handleReplInput(answer, options, io);
-        if (!shouldContinue) {
-          break;
+    while (true) {
+      if (isInteractive) {
+        options.output.write(options.prompt);
+      }
+
+      let line = await nextLine();
+      if (line === null) {
+        return;
+      }
+
+      if (isInteractive) {
+        // A multiline paste arrives as a burst of line events; join it into one task.
+        // Piped input keeps line-per-task semantics for scripted runs.
+        while (true) {
+          const extra = await lines.nextWithin(pasteJoinMs);
+          if (extra === null) {
+            break;
+          }
+          line = `${line} ${extra}`;
         }
       }
-      return;
-    }
 
-    while (true) {
-      const answer = await rl.question(options.prompt);
-      const shouldContinue = await handleReplInput(answer, options, io);
+      const shouldContinue = await handleReplInput(line, options, io);
       if (!shouldContinue) {
-        break;
+        return;
       }
     }
   } finally {

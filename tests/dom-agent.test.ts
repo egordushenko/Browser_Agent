@@ -69,4 +69,27 @@ describe("DomAgent", () => {
     });
     expect(broken).toMatchObject({ answer: "The page has no such element.", confidence: "low" });
   });
+
+  test("unwraps double-encoded JSON and numeric confidence from the sub-agent", async () => {
+    const provider: LLMProvider = {
+      complete: async () => ({
+        text: JSON.stringify({
+          answer: JSON.stringify({ answer: "Резюме найдено", selector: "text=AI-first Product Engineer", confidence: 0.86 }),
+          confidence: "low",
+        }),
+        usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
+      }),
+    };
+
+    const result = await new DomAgent(provider).query({
+      question: "find resume",
+      perception: { ariaSnapshot: "-", candidates: [] },
+    });
+
+    expect(result).toMatchObject({
+      answer: "Резюме найдено",
+      selector: "text=AI-first Product Engineer",
+      confidence: "high",
+    });
+  });
 });

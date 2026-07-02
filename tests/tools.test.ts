@@ -15,6 +15,9 @@ describe("getToolSchemas", () => {
       "wait",
       "read_page",
       "screenshot",
+      "propose_selection",
+      "confirm_batch",
+      "execute_batch",
       "ask_user",
       "done",
     ]);

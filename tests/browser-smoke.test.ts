@@ -224,6 +224,92 @@ describe("browser smoke on a local fixture", () => {
     expect(objectMemory.get("o2").status).toBe("seen");
   }, 30_000);
 
+  test("full batch flow: extract, open, propose, confirm, execute by objectId", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const objectMemory = new ObjectMemory();
+    const domAgentStub = {
+      query: async () => ({
+        answer: "Two vacancies with apply controls.",
+        confidence: "high" as const,
+        objects: [
+          {
+            type: "vacancy" as const,
+            title: "Junior Python Engineer",
+            candidateId: "c6",
+            actionCandidateId: "c7",
+            fields: { keywords: "Python, Junior" },
+          },
+          {
+            type: "vacancy" as const,
+            title: "AI Engineer",
+            candidateId: "c8",
+            actionCandidateId: "c9",
+            fields: { keywords: "AI" },
+          },
+        ],
+      }),
+    } as unknown as DomAgent;
+    const confirmations: string[] = [];
+    const runtime = createBrowserToolRuntime(page, domAgentStub, {
+      askUser: async (question) => {
+        confirmations.push(question);
+        return "y";
+      },
+      objectMemory,
+    });
+
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "list vacancies" } }, runtime);
+
+    // done is blocked until the review/confirm workflow is respected end to end.
+    await executeToolCall({ id: "o1", name: "open_candidate", arguments: { candidateId: "c6" } }, runtime);
+    await executeToolCall({ id: "o2", name: "open_candidate", arguments: { candidateId: "c8" } }, runtime);
+
+    const proposed = await executeToolCall(
+      {
+        id: "p",
+        name: "propose_selection",
+        arguments: { objectType: "vacancy", objectIds: ["o1", "o2"], reason: "Python/AI match" },
+      },
+      runtime,
+    );
+    expect(proposed.ok).toBe(true);
+
+    const blockedDone = await executeToolCall(
+      { id: "d1", name: "done", arguments: { summary: "done early", incomplete_reason: null } },
+      runtime,
+    );
+    expect(blockedDone.ok).toBe(false);
+    expect(String(blockedDone.content)).toContain("confirmation_required");
+
+    const confirmed = await executeToolCall(
+      { id: "c", name: "confirm_batch", arguments: { summary: "Откликнуться на 2 вакансии" } },
+      runtime,
+    );
+    expect(confirmed.content).toMatchObject({ confirmed: true });
+    expect(confirmations[0]).toContain("Откликнуться на 2 вакансии");
+
+    const executed = await executeToolCall(
+      { id: "e", name: "execute_batch", arguments: { action: "apply", objectIds: ["o1", "o2"] } },
+      runtime,
+    );
+    expect(executed.ok).toBe(true);
+    expect(executed.content).toEqual({
+      action: "apply",
+      results: [
+        { objectId: "o1", outcome: "action_done" },
+        { objectId: "o2", outcome: "action_done" },
+      ],
+    });
+    expect(page.url()).toContain("#apply-job-2");
+
+    const finished = await executeToolCall(
+      { id: "d2", name: "done", arguments: { summary: "Applied to both vacancies", incomplete_reason: null } },
+      runtime,
+    );
+    expect(finished.ok).toBe(true);
+  }, 30_000);
+
   test("scroll and wait run without touching the DOM", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);

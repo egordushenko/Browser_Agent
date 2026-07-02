@@ -3,17 +3,36 @@ import path from "node:path";
 import type { Page } from "playwright";
 import { CandidateRegistry } from "../browser/candidate-registry.js";
 import { collectPagePerceptionWithRegistry } from "../browser/perception.js";
-import { missingCheckpointsForDone } from "./checkpoints.js";
+import {
+  assertExecutable,
+  assertSelectable,
+  BATCH_ACTIONS,
+  missingCheckpointsForDone,
+  type BatchAction,
+} from "./checkpoints.js";
+import { isAffirmativeAnswer } from "./confirmation.js";
 import type { ObjectMemory } from "./object-memory.js";
 import type { DomAgent } from "../subagents/dom-agent.js";
 import type { DomQueryResult, MemoryObject, ToolCall, ToolResult, ToolSchema } from "../types.js";
 
+export interface BatchExecutionResult {
+  action: BatchAction;
+  results: Array<{ objectId: string; outcome: string }>;
+}
+
 export interface BrowserToolRuntime {
   askUser: (question: string) => Promise<{ question: string; answer?: string }>;
   click: (candidateId: string) => Promise<{ candidateId: string }>;
+  confirmBatch?: (summary: string) => Promise<{ confirmed: boolean; objectIds: string[] }>;
   done: (summary: string, incompleteReason?: string) => Promise<{ summary: string; incompleteReason?: string }>;
+  executeBatch?: (action: BatchAction, objectIds: string[]) => Promise<BatchExecutionResult>;
   navigate: (url: string) => Promise<{ title: string; url: string }>;
   openCandidate: (candidateId: string) => Promise<{ candidateId: string; href?: string }>;
+  proposeSelection?: (
+    objectType: string,
+    objectIds: string[],
+    reason: string,
+  ) => Promise<{ proposed: Array<{ objectId: string; title: string }>; reason: string }>;
   queryDom: (question: string) => Promise<DomQueryResult>;
   readPage: (question?: string) => Promise<DomQueryResult>;
   screenshot?: (fullPage: boolean) => Promise<{ path: string }>;
@@ -187,6 +206,74 @@ export function getToolSchemas(): ToolSchema[] {
     },
     {
       type: "function",
+      name: "propose_selection",
+      description:
+        "Select reviewed objects (by objectId) for a batch action. Objects must have been opened/reviewed first.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          objectType: {
+            type: "string",
+            enum: ["email", "product", "vacancy", "resume", "other"],
+            description: "Type shared by all selected objects.",
+          },
+          objectIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "objectIds from query_dom results.",
+          },
+          reason: {
+            type: "string",
+            description: "Why exactly these objects match the task.",
+          },
+        },
+        required: ["objectType", "objectIds", "reason"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "confirm_batch",
+      description: "Show the currently selected objects to the user and ask them to confirm the batch.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          summary: {
+            type: "string",
+            description: "Short human-readable description of what will happen to the selected objects.",
+          },
+        },
+        required: ["summary"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "execute_batch",
+      description:
+        "Execute one action for confirmed objects by objectId. Destructive actions require a confirmed batch.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            enum: [...BATCH_ACTIONS],
+          },
+          objectIds: {
+            type: "array",
+            items: { type: "string" },
+            description: "objectIds to act on.",
+          },
+        },
+        required: ["action", "objectIds"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
       name: "ask_user",
       description: "Pause and ask the user a question in the terminal; returns their answer.",
       strict: true,
@@ -311,6 +398,45 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
         content: await runtime.screenshot(fullPage),
       };
     }
+    if (call.name === "propose_selection") {
+      if (!runtime.proposeSelection) {
+        return { ok: false, toolName: call.name, content: "propose_selection is not available in this session" };
+      }
+      const objectType = readRequiredString(call.arguments, "objectType");
+      const objectIds = readRequiredStringArray(call.arguments, "objectIds");
+      const reason = readRequiredString(call.arguments, "reason");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.proposeSelection(objectType, objectIds, reason),
+      };
+    }
+    if (call.name === "confirm_batch") {
+      if (!runtime.confirmBatch) {
+        return { ok: false, toolName: call.name, content: "confirm_batch is not available in this session" };
+      }
+      const summary = readRequiredString(call.arguments, "summary");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.confirmBatch(summary),
+      };
+    }
+    if (call.name === "execute_batch") {
+      if (!runtime.executeBatch) {
+        return { ok: false, toolName: call.name, content: "execute_batch is not available in this session" };
+      }
+      const action = readRequiredString(call.arguments, "action");
+      if (!(BATCH_ACTIONS as readonly string[]).includes(action)) {
+        throw new Error(`Unknown batch action "${action}". Valid actions: ${BATCH_ACTIONS.join(", ")}`);
+      }
+      const objectIds = readRequiredStringArray(call.arguments, "objectIds");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.executeBatch(action as BatchAction, objectIds),
+      };
+    }
     if (call.name === "ask_user") {
       const question = readRequiredString(call.arguments, "question");
       return {
@@ -370,6 +496,28 @@ export function createBrowserToolRuntime(
       options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId };
     },
+    confirmBatch: async (summary) => {
+      const memory = requireObjectMemory(options);
+      if (!options?.askUser) {
+        throw new Error("confirm_batch requires an interactive user session");
+      }
+      const selected = memory.list({ status: "selected" });
+      if (selected.length === 0) {
+        throw new Error("No selected objects to confirm; run propose_selection first.");
+      }
+      const answer = await options.askUser(
+        [
+          summary,
+          `Batch objects: ${selected.map((object) => `${object.objectId} "${object.title}"`).join("; ")}`,
+          "Confirm batch? [y/N] ",
+        ].join("\n"),
+      );
+      const confirmed = isAffirmativeAnswer(answer);
+      for (const object of selected) {
+        memory.setStatus(object.objectId, confirmed ? "action_ready" : "rejected");
+      }
+      return { confirmed, objectIds: selected.map((object) => object.objectId) };
+    },
     done: async (summary, incompleteReason) => {
       if (options?.objectMemory && !incompleteReason?.trim()) {
         const missing = missingCheckpointsForDone(options.objectMemory);
@@ -381,6 +529,30 @@ export function createBrowserToolRuntime(
         }
       }
       return { summary, ...(incompleteReason ? { incompleteReason } : {}) };
+    },
+    executeBatch: async (action, objectIds) => {
+      const memory = requireObjectMemory(options);
+      const results: BatchExecutionResult["results"] = [];
+      for (const objectId of objectIds) {
+        const object = memory.get(objectId);
+        assertExecutable(object, action);
+        if (action === "stop_before_payment") {
+          results.push({ objectId, outcome: "stopped_before_payment" });
+          continue;
+        }
+        const controlId = object.actionCandidateId ?? object.candidateId;
+        if (!controlId) {
+          throw new Error(
+            `Object ${objectId} has no known action control; re-run query_dom on the page where its control is visible. ` +
+              `Executed so far: ${JSON.stringify(results)}`,
+          );
+        }
+        const candidate = candidateRegistry.get(controlId);
+        await (await resolveLocator(page, candidate.selector)).click();
+        memory.setStatus(objectId, "action_done");
+        results.push({ objectId, outcome: "action_done" });
+      }
+      return { action, results };
     },
     screenshot: async (fullPage) => {
       const dir = options?.screenshotDir ?? ".screenshots";
@@ -404,6 +576,23 @@ export function createBrowserToolRuntime(
       await (await resolveLocator(page, candidate.selector)).click();
       options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId, href: candidate.href };
+    },
+    proposeSelection: async (objectType, objectIds, reason) => {
+      const memory = requireObjectMemory(options);
+      const objects = objectIds.map((objectId) => memory.get(objectId));
+      for (const object of objects) {
+        if (object.type !== objectType) {
+          throw new Error(`Object ${object.objectId} has type "${object.type}", not "${objectType}".`);
+        }
+        assertSelectable(object);
+      }
+      for (const object of objects) {
+        memory.setStatus(object.objectId, "selected");
+      }
+      return {
+        proposed: objects.map((object) => ({ objectId: object.objectId, title: object.title })),
+        reason,
+      };
     },
     queryDom: async (question) => {
       const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
@@ -466,6 +655,13 @@ export function createBrowserToolRuntime(
       return { seconds };
     },
   };
+}
+
+function requireObjectMemory(options: BrowserToolRuntimeOptions | undefined): ObjectMemory {
+  if (!options?.objectMemory) {
+    throw new Error("Object memory is not configured for this session");
+  }
+  return options.objectMemory;
 }
 
 // Replace raw drafts with tracked memory objects so the orchestrator sees stable
@@ -538,6 +734,14 @@ function readRequiredString(value: Record<string, unknown>, key: string): string
     throw new Error(`Tool argument "${key}" must be a non-empty string`);
   }
   return field;
+}
+
+function readRequiredStringArray(value: Record<string, unknown>, key: string): string[] {
+  const field = value[key];
+  if (!Array.isArray(field) || field.length === 0 || field.some((item) => typeof item !== "string" || item.trim().length === 0)) {
+    throw new Error(`Tool argument "${key}" must be a non-empty array of strings`);
+  }
+  return field as string[];
 }
 
 // Strict tool schemas mark optional fields as nullable, so null means "not provided".

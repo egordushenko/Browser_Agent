@@ -1,6 +1,7 @@
 import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
+import { isAffirmativeAnswer } from "./agent/confirmation.js";
 import { ObjectMemory } from "./agent/object-memory.js";
 import { runAgentTask } from "./agent/orchestrator.js";
 import { extractAllowedNavigationUrls } from "./agent/navigation-policy.js";
@@ -68,7 +69,7 @@ async function main(): Promise<void> {
         const securityGate = new SecurityGate({
           confirm: async (message) => {
             const answer = await io.question(`\n${message}\nConfirm? [y/N] `);
-            return /^y(es)?$/i.test(answer.trim());
+            return isAffirmativeAnswer(answer);
           },
           onDecision: (decision, reviewInput) => {
             const verdict = decision.requiresConfirmation ? "confirmation required" : "allowed";

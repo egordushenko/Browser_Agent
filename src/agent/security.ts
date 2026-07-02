@@ -73,7 +73,7 @@ export function parseSecurityDecision(text: string | undefined): SecurityDecisio
   }
 
   try {
-    const parsed = JSON.parse(text) as Partial<SecurityDecision>;
+    const parsed = JSON.parse(extractJsonPayload(text)) as Partial<SecurityDecision>;
     if (typeof parsed.requiresConfirmation !== "boolean") {
       return { requiresConfirmation: true, reason: "Security classifier answer had no boolean verdict." };
     }
@@ -84,6 +84,11 @@ export function parseSecurityDecision(text: string | undefined): SecurityDecisio
   } catch {
     return { requiresConfirmation: true, reason: "Security classifier answer was not valid JSON." };
   }
+}
+
+function extractJsonPayload(text: string): string {
+  const fenced = /```(?:json)?\s*([\s\S]*?)```/i.exec(text);
+  return (fenced ? fenced[1] : text).trim();
 }
 
 function buildConfirmationMessage(input: SecurityReviewInput, decision: SecurityDecision): string {

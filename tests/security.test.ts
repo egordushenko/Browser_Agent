@@ -1,6 +1,20 @@
 import { describe, expect, test } from "vitest";
-import { SecurityGate } from "../src/agent/security.js";
+import { parseSecurityDecision, SecurityGate } from "../src/agent/security.js";
 import type { LLMProvider } from "../src/llm/provider.js";
+
+describe("parseSecurityDecision", () => {
+  test("reads fenced classifier JSON", () => {
+    expect(parseSecurityDecision('```json\n{"requiresConfirmation": false, "reason": "Safe."}\n```')).toEqual({
+      requiresConfirmation: false,
+      reason: "Safe.",
+    });
+  });
+
+  test("fails closed on garbage", () => {
+    expect(parseSecurityDecision("no verdict here").requiresConfirmation).toBe(true);
+    expect(parseSecurityDecision(undefined).requiresConfirmation).toBe(true);
+  });
+});
 
 describe("SecurityGate", () => {
   test("asks for confirmation when classifier marks an action irreversible", async () => {

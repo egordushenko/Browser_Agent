@@ -29,11 +29,20 @@ describe("runAgentStep", () => {
       },
       runtime: {
         navigate: async (url) => ({ url, title: "Example Domain" }),
+        queryDom: async () => {
+          throw new Error("unexpected");
+        },
+        click: async () => {
+          throw new Error("unexpected");
+        },
+        type: async () => {
+          throw new Error("unexpected");
+        },
       },
     });
 
     expect(requests).toHaveLength(1);
-    expect(requests[0].tools.map((tool) => tool.name)).toEqual(["navigate"]);
+    expect(requests[0].tools.map((tool) => tool.name)).toEqual(["navigate", "query_dom", "click", "type"]);
     expect(requests[0].messages.at(-1)).toMatchObject({
       role: "user",
       content: expect.stringContaining("Open example.com"),

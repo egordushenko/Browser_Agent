@@ -5,6 +5,7 @@ import { runAgentStep } from "./agent/orchestrator.js";
 import { createBrowserToolRuntime } from "./agent/tools.js";
 import { OpenAIProvider } from "./llm/openai.js";
 import { startRepl } from "./repl.js";
+import { DomAgent } from "./subagents/dom-agent.js";
 
 async function main(): Promise<void> {
   const cli = parseCliArgs(process.argv.slice(2));
@@ -15,13 +16,19 @@ async function main(): Promise<void> {
 
   const config = loadConfig(process.env, process.argv.slice(2), process.cwd());
   const session = await launchBrowserSession(config.browser);
-  const runtime = createBrowserToolRuntime(session.page);
   const provider = config.llm.apiKey
     ? new OpenAIProvider({
         apiKey: config.llm.apiKey,
         model: config.llm.orchestratorModel,
       })
     : null;
+  const domProvider = config.llm.apiKey
+    ? new OpenAIProvider({
+        apiKey: config.llm.apiKey,
+        model: config.llm.subAgentModel,
+      })
+    : null;
+  const runtime = createBrowserToolRuntime(session.page, domProvider ? new DomAgent(domProvider) : undefined);
 
   const close = async () => {
     await session.close();

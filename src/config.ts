@@ -19,6 +19,7 @@ export interface LlmConfig {
   apiKey?: string;
   orchestratorModel: string;
   provider: "openai";
+  subAgentModel: string;
 }
 
 export interface AppConfig {
@@ -86,6 +87,7 @@ export function loadConfig(
       apiKey: env.OPENAI_API_KEY,
       orchestratorModel: env.BROWSER_AGENT_ORCHESTRATOR_MODEL ?? "gpt-5.4-mini",
       provider: "openai",
+      subAgentModel: env.BROWSER_AGENT_DOM_MODEL ?? "gpt-5.4-nano",
     },
     repl: {
       prompt: "browser-agent> ",
@@ -104,6 +106,7 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_PROFILE_DIR=.browser-profile",
     "  BROWSER_AGENT_NAV_TIMEOUT_MS=30000",
     "  BROWSER_AGENT_ORCHESTRATOR_MODEL=gpt-5.4-mini",
+    "  BROWSER_AGENT_DOM_MODEL=gpt-5.4-nano",
     "  OPENAI_API_KEY=...",
   ].join("\n");
 }

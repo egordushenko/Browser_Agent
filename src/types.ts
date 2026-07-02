@@ -39,3 +39,22 @@ export interface ToolResult {
   toolName: string;
   content: unknown;
 }
+
+export interface PerceptionCandidate {
+  label: string;
+  selector: string;
+  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "text";
+  tagName: string;
+}
+
+export interface PagePerception {
+  ariaSnapshot: string;
+  candidates: PerceptionCandidate[];
+}
+
+export interface DomQueryResult {
+  answer: string;
+  confidence: "low" | "medium" | "high";
+  selector?: string;
+  usage?: Usage;
+}

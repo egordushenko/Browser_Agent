@@ -43,12 +43,17 @@ export class OpenAIProvider implements LLMProvider {
   }
 
   async complete(req: LLMRequest): Promise<LLMResponse> {
-    const response = await this.client.responses.create({
+    const request: Record<string, unknown> = {
       model: this.model,
       input: [{ role: "system", content: req.system }, ...req.messages],
-      tools: req.tools,
-      tool_choice: "auto",
-    });
+    };
+
+    if (req.tools.length > 0) {
+      request.tools = req.tools;
+      request.tool_choice = "auto";
+    }
+
+    const response = await this.client.responses.create(request);
 
     return {
       text: response.output_text,

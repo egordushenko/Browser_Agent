@@ -5,7 +5,7 @@ describe("getToolSchemas", () => {
   test("exposes navigate as a strict generic function tool", () => {
     const schemas = getToolSchemas();
 
-    expect(schemas).toHaveLength(1);
+    expect(schemas.map((schema) => schema.name)).toEqual(["navigate", "query_dom", "click", "type"]);
     expect(schemas[0]).toMatchObject({
       type: "function",
       name: "navigate",
@@ -27,6 +27,15 @@ describe("executeToolCall", () => {
         navigated.push(url);
         return { url, title: "Example Domain" };
       },
+      queryDom: async () => {
+        throw new Error("unexpected");
+      },
+      click: async () => {
+        throw new Error("unexpected");
+      },
+      type: async () => {
+        throw new Error("unexpected");
+      },
     };
 
     const result = await executeToolCall(
@@ -47,5 +56,35 @@ describe("executeToolCall", () => {
         title: "Example Domain",
       },
     });
+  });
+
+  test("delegates query_dom, click, and type to the browser runtime", async () => {
+    const actions: string[] = [];
+    const runtime: BrowserToolRuntime = {
+      navigate: async () => {
+        throw new Error("unexpected");
+      },
+      queryDom: async (question) => {
+        actions.push(`query:${question}`);
+        return { answer: "Found", selector: "css=#search", confidence: "high" };
+      },
+      click: async (selector) => {
+        actions.push(`click:${selector}`);
+        return { selector };
+      },
+      type: async (selector, text) => {
+        actions.push(`type:${selector}:${text}`);
+        return { selector, textLength: text.length };
+      },
+    };
+
+    await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "search field" } }, runtime);
+    await executeToolCall({ id: "c", name: "click", arguments: { selector: "css=#search" } }, runtime);
+    await executeToolCall(
+      { id: "t", name: "type", arguments: { selector: "css=#search", text: "hot dog" } },
+      runtime,
+    );
+
+    expect(actions).toEqual(["query:search field", "click:css=#search", "type:css=#search:hot dog"]);
   });
 });

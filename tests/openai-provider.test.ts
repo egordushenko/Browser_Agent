@@ -66,4 +66,38 @@ describe("OpenAIProvider", () => {
       },
     });
   });
+
+  test("omits the tools field when no tools are provided", async () => {
+    const requests: Record<string, unknown>[] = [];
+    const client: OpenAIResponsesClient = {
+      responses: {
+        create: async (request) => {
+          requests.push(request as Record<string, unknown>);
+          return {
+            output_text: "{\"answer\":\"No selector\",\"confidence\":\"low\"}",
+            output: [],
+            usage: {
+              input_tokens: 3,
+              output_tokens: 2,
+              total_tokens: 5,
+            },
+          };
+        },
+      },
+    };
+
+    const provider = new OpenAIProvider({
+      apiKey: "test-key",
+      model: "gpt-test",
+      client,
+    });
+
+    await provider.complete({
+      system: "system prompt",
+      messages: [{ role: "user", content: "read compact DOM" }],
+      tools: [],
+    });
+
+    expect(requests[0]).not.toHaveProperty("tools");
+  });
 });

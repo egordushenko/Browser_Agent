@@ -1,8 +1,13 @@
 import type { Page } from "playwright";
-import type { ToolCall, ToolResult, ToolSchema } from "../types.js";
+import { collectPagePerception } from "../browser/perception.js";
+import type { DomAgent } from "../subagents/dom-agent.js";
+import type { DomQueryResult, ToolCall, ToolResult, ToolSchema } from "../types.js";
 
 export interface BrowserToolRuntime {
+  click: (selector: string) => Promise<{ selector: string }>;
   navigate: (url: string) => Promise<{ title: string; url: string }>;
+  queryDom: (question: string) => Promise<DomQueryResult>;
+  type: (selector: string, text: string) => Promise<{ selector: string; textLength: number }>;
 }
 
 export function getToolSchemas(): ToolSchema[] {
@@ -24,6 +29,61 @@ export function getToolSchemas(): ToolSchema[] {
         additionalProperties: false,
       },
     },
+    {
+      type: "function",
+      name: "query_dom",
+      description: "Ask the DOM sub-agent for relevant page text and runtime selectors.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          question: {
+            type: "string",
+            description: "Natural-language question about the current page.",
+          },
+        },
+        required: ["question"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "click",
+      description: "Click a selector returned by the DOM sub-agent.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          selector: {
+            type: "string",
+            description: "Runtime selector returned by query_dom.",
+          },
+        },
+        required: ["selector"],
+        additionalProperties: false,
+      },
+    },
+    {
+      type: "function",
+      name: "type",
+      description: "Type text into a selector returned by the DOM sub-agent.",
+      strict: true,
+      parameters: {
+        type: "object",
+        properties: {
+          selector: {
+            type: "string",
+            description: "Runtime selector returned by query_dom.",
+          },
+          text: {
+            type: "string",
+            description: "Text to enter.",
+          },
+        },
+        required: ["selector", "text"],
+        additionalProperties: false,
+      },
+    },
   ];
 }
 
@@ -35,6 +95,31 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
         ok: true,
         toolName: call.name,
         content: await runtime.navigate(url),
+      };
+    }
+    if (call.name === "query_dom") {
+      const question = readRequiredString(call.arguments, "question");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.queryDom(question),
+      };
+    }
+    if (call.name === "click") {
+      const selector = readRequiredString(call.arguments, "selector");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.click(selector),
+      };
+    }
+    if (call.name === "type") {
+      const selector = readRequiredString(call.arguments, "selector");
+      const text = readRequiredString(call.arguments, "text");
+      return {
+        ok: true,
+        toolName: call.name,
+        content: await runtime.type(selector, text),
       };
     }
 
@@ -52,8 +137,12 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
   }
 }
 
-export function createBrowserToolRuntime(page: Page): BrowserToolRuntime {
+export function createBrowserToolRuntime(page: Page, domAgent?: DomAgent): BrowserToolRuntime {
   return {
+    click: async (selector) => {
+      await resolveLocator(page, selector).click();
+      return { selector };
+    },
     navigate: async (url) => {
       await page.goto(url);
       return {
@@ -61,7 +150,33 @@ export function createBrowserToolRuntime(page: Page): BrowserToolRuntime {
         url: page.url(),
       };
     },
+    queryDom: async (question) => {
+      if (!domAgent) {
+        throw new Error("DOM sub-agent is not configured");
+      }
+      return domAgent.query({
+        question,
+        perception: await collectPagePerception(page, {
+          ariaSnapshotTimeoutMs: 5000,
+          maxCandidateTextLength: 120,
+        }),
+      });
+    },
+    type: async (selector, text) => {
+      await resolveLocator(page, selector).fill(text);
+      return { selector, textLength: text.length };
+    },
   };
+}
+
+function resolveLocator(page: Page, selector: string) {
+  if (selector.startsWith("css=")) {
+    return page.locator(selector.slice("css=".length));
+  }
+  if (selector.startsWith("text=")) {
+    return page.getByText(selector.slice("text=".length));
+  }
+  return page.locator(selector);
 }
 
 function readRequiredString(value: Record<string, unknown>, key: string): string {

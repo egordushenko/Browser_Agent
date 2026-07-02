@@ -73,9 +73,11 @@ async function main(): Promise<void> {
           },
           onDecision: (decision, reviewInput) => {
             const verdict = decision.requiresConfirmation ? "confirmation required" : "allowed";
-            process.stdout.write(`Security check: ${reviewInput.toolName} -> ${verdict} (${decision.reason})\n`);
+            const target = reviewInput.target ? ` [target: ${reviewInput.target.label}]` : "";
+            process.stdout.write(`Security check: ${reviewInput.toolName}${target} -> ${verdict} (${decision.reason})\n`);
           },
-          provider: domProvider,
+          // The cheap sub-agent model proved too flaky for security verdicts; use the orchestrator model.
+          provider,
         });
 
         let totalUsage: Usage = { inputTokens: 0, outputTokens: 0, totalTokens: 0 };

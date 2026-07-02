@@ -29,8 +29,13 @@ export async function launchBrowserSession(config: BrowserConfig): Promise<Brows
   await fs.mkdir(config.userDataDir, { recursive: true });
 
   const context = await chromium.launchPersistentContext(config.userDataDir, {
+    args: ["--start-maximized"],
     channel: config.channel,
+    // Real Chrome sandbox on; without this Playwright adds --no-sandbox and Chrome shows a warning banner.
+    chromiumSandbox: true,
     headless: config.headless,
+    // No fixed viewport: the page fills the whole window instead of a 1280x720 area with gray padding.
+    viewport: null,
   });
   context.setDefaultNavigationTimeout(config.navTimeoutMs);
 

@@ -26,9 +26,20 @@ const FIXTURE_HTML = `<!DOCTYPE html>
       <a tabindex="0" role="button" href="#apply-job-2">Apply</a>
     </section>
     <button id="vanishing">Vanishing button</button>
+    <section id="resumes">
+      <div role="button" tabindex="0" class="resume-card">
+        Постоянная работа, подработка<br />
+        AI-first Product Engineer · Full-Stack<br />
+        80 000 ₽ · Удалённо, Гибрид
+      </div>
+    </section>
     <output id="active-tab">jobs</output>
     <output id="cart-count">0</output>
+    <output id="opened-resume">none</output>
     <script>
+      document.querySelector("#resumes .resume-card").addEventListener("click", () => {
+        document.getElementById("opened-resume").textContent = "ai-first";
+      });
       document.getElementById("resume-tab").addEventListener("click", () => {
         document.getElementById("active-tab").textContent = "resume";
       });
@@ -113,6 +124,25 @@ describe("browser smoke on a local fixture", () => {
 
     expect(clicked.ok).toBe(true);
     expect(await page.textContent("#active-tab")).toBe("resume");
+  }, 30_000);
+
+  test("clickable cards without stable attributes get a positional path (hh resume-card pattern)", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const queried = await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect candidates" } }, runtime);
+    const candidates = (queried.content as { candidates: Array<{ candidateId: string; label: string }> }).candidates;
+    const card = candidates.find((candidate) => candidate.label.startsWith("Постоянная работа"));
+    expect(card).toBeDefined();
+
+    const clicked = await executeToolCall(
+      { id: "card", name: "click", arguments: { candidateId: card!.candidateId } },
+      runtime,
+    );
+
+    expect(clicked.ok).toBe(true);
+    expect(await page.textContent("#opened-resume")).toBe("ai-first");
   }, 30_000);
 
   test("candidate ids click a repeated control inside a specific card", async (ctx) => {

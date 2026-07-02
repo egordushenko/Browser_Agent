@@ -4,7 +4,7 @@ export interface CandidateRecord extends PerceptionCandidate {
   nearestStableContainer?: string | null;
   pageFingerprint: string;
   selector: string;
-  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "role" | "text";
+  selectorSource: "id" | "data-testid" | "name" | "aria-label" | "css-path" | "role" | "text";
 }
 
 export class CandidateRegistry {

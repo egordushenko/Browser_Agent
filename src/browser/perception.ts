@@ -20,6 +20,7 @@ export interface PagePerceptionWithRegistry {
 interface RawCandidateElement {
   ancestorSelector?: string | null;
   ariaLabel: string | null;
+  cssPath?: string | null;
   href?: string | null;
   id: string;
   name: string | null;
@@ -126,7 +127,37 @@ const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
         return null;
       };
 
+      // Positional path from the nearest stable ancestor. Unique by construction and
+      // exactly as page-scoped as the candidateId that will reference it.
+      const findCssPath = () => {
+        const parts = [];
+        let node = element;
+        while (node && node !== document.body && node !== document.documentElement) {
+          if (node !== element && node.id) {
+            parts.unshift(attrSelector("id", node.id));
+            return parts.join(" > ");
+          }
+          const stableTestId = node !== element && node.getAttribute
+            ? node.getAttribute("data-testid") || node.getAttribute("data-test")
+            : null;
+          if (stableTestId) {
+            parts.unshift(attrSelector(node.hasAttribute("data-testid") ? "data-testid" : "data-test", stableTestId));
+            return parts.join(" > ");
+          }
+          const parent = node.parentElement;
+          if (!parent) {
+            break;
+          }
+          const index = Array.prototype.indexOf.call(parent.children, node) + 1;
+          parts.unshift(node.tagName.toLowerCase() + ":nth-child(" + index + ")");
+          node = parent;
+        }
+        parts.unshift("body");
+        return parts.join(" > ");
+      };
+
       return {
+        cssPath: findCssPath(),
         ancestorSelector: findAncestorSelector(),
         ariaLabel: element.getAttribute("aria-label"),
         href: element instanceof HTMLAnchorElement ? element.href : element.getAttribute("href"),
@@ -235,6 +266,11 @@ function chooseSelector(raw: RawCandidateElement): Pick<CandidateRecord, "select
   }
   if (raw.ariaLabel) {
     return { selectorSource: "aria-label", value: `css=[aria-label="${escapeAttributeValue(raw.ariaLabel)}"]` };
+  }
+  // Elements without stable attributes (e.g. clickable cards) get a positional path:
+  // role/text names are unreliable because the accessible name is the full card text.
+  if (raw.cssPath) {
+    return { selectorSource: "css-path", value: `css=${raw.cssPath}` };
   }
   if (raw.role) {
     const accessibleName = [raw.ariaLabel, raw.text]

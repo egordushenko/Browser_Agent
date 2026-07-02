@@ -23,6 +23,7 @@ interface RawCandidateElement {
   cssPath?: string | null;
   href?: string | null;
   id: string;
+  inDialog?: boolean;
   name: string | null;
   placeholder: string | null;
   role: string | null;
@@ -62,6 +63,7 @@ export async function collectPagePerceptionWithRegistry(
     perception: {
       ariaSnapshot,
       candidates: records.map(toPublicCandidate),
+      ...(records.some((record) => record.inDialog) ? { dialogOpen: true } : {}),
     },
     registry: new CandidateRegistry(pageFingerprint, records),
   };
@@ -104,12 +106,20 @@ const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
 
   const attrSelector = (name, value) => "[" + name + "=\"" + String(value).replaceAll("\\", "\\\\").replaceAll("\"", "\\\"") + "\"]";
 
-  return Array.from(document.querySelectorAll(selector))
-    .filter((element) => {
-      const style = window.getComputedStyle(element);
-      const rect = element.getBoundingClientRect();
-      return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
-    })
+  const isInDialog = (element) =>
+    Boolean(element.closest('dialog,[role="dialog"],[role="alertdialog"],[aria-modal="true"]'));
+
+  const visible = Array.from(document.querySelectorAll(selector)).filter((element) => {
+    const style = window.getComputedStyle(element);
+    const rect = element.getBoundingClientRect();
+    return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
+  });
+
+  // Modal dialogs are portaled to the end of body; without this priority the
+  // element cap can silently drop the only controls that are actually clickable.
+  return visible
+    .filter(isInDialog)
+    .concat(visible.filter((element) => !isInDialog(element)))
     .slice(0, 120)
     .map((element) => {
       const findAncestorSelector = () => {
@@ -160,6 +170,7 @@ const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
         cssPath: findCssPath(),
         ancestorSelector: findAncestorSelector(),
         ariaLabel: element.getAttribute("aria-label"),
+        inDialog: isInDialog(element),
         href: element instanceof HTMLAnchorElement ? element.href : element.getAttribute("href"),
         id: element.id,
         name: element.getAttribute("name"),
@@ -199,6 +210,7 @@ function toCandidateDraft(
 
   return {
     ...(raw.href?.trim() ? { href: raw.href.trim() } : {}),
+    ...(raw.inDialog ? { inDialog: true } : {}),
     kind: inferCandidateKind(raw),
     label,
     nearestStableContainer: raw.ancestorSelector ?? null,

@@ -382,6 +382,47 @@ describe("browser smoke on a local fixture", () => {
     }
   }, 30_000);
 
+  test("modal dialog controls survive the candidate cap and are flagged (hh country-confirm pattern)", async (ctx) => {
+    if (!browser) return ctx.skip();
+    // 200 buttons exhaust the 120-candidate cap; the modal is portaled to the end of body.
+    const longPageWithModal = `<!DOCTYPE html>
+      <html><head><title>Long list</title></head><body>
+        ${Array.from({ length: 200 }, (_, index) => `<button>Vacancy action ${index + 1}</button>`).join("\n")}
+        <div role="dialog" aria-modal="true">
+          <p>Вы откликаетесь на вакансию в другой стране. Продолжить?</p>
+          <button id="dialog-continue">Продолжить</button>
+          <button id="dialog-cancel">Отмена</button>
+        </div>
+      </body></html>`;
+    await page.setContent(longPageWithModal);
+
+    const perception = await collectPagePerception(page, {
+      ariaSnapshotTimeoutMs: 5000,
+      maxCandidateTextLength: 120,
+    });
+
+    expect(perception.dialogOpen).toBe(true);
+    // Dialog content (container + its buttons) is ranked ahead of the 200 list buttons.
+    const firstThree = perception.candidates.slice(0, 3);
+    expect(firstThree.every((candidate) => candidate.inDialog)).toBe(true);
+    expect(firstThree.map((candidate) => candidate.label)).toEqual(
+      expect.arrayContaining(["Продолжить", "Отмена"]),
+    );
+
+    // The dialog button is clickable through its candidateId.
+    const runtime = createBrowserToolRuntime(page);
+    const queried = await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "collect" } }, runtime);
+    const cancel = (queried.content as { candidates: Array<{ candidateId: string; label: string }> }).candidates.find(
+      (candidate) => candidate.label === "Отмена",
+    );
+    expect(cancel).toBeDefined();
+    const clicked = await executeToolCall(
+      { id: "c", name: "click", arguments: { candidateId: cancel!.candidateId } },
+      runtime,
+    );
+    expect(clicked.ok).toBe(true);
+  }, 30_000);
+
   test("scroll and wait run without touching the DOM", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);

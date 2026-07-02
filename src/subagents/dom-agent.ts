@@ -27,6 +27,8 @@ export class DomAgent {
         "Never invent selectors, URLs, refs, hrefs, or candidate ids.",
         "A candidate with occurrences > 1 matches several elements at once; call that out as ambiguous",
         "and suggest an intermediate step (e.g. open the specific card first).",
+        "If the perception has dialogOpen=true, a modal dialog is currently blocking the page:",
+        "describe the dialog first and prefer candidates marked inDialog=true for the next action.",
         "Do not return an ambiguous candidateId.",
       ].join("\n"),
       messages: [

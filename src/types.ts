@@ -43,6 +43,8 @@ export interface ToolResult {
 export interface PerceptionCandidate {
   candidateId: string;
   href?: string;
+  /** Set when the element lives inside an open modal dialog blocking the page. */
+  inDialog?: boolean;
   kind: "button" | "input" | "link" | "control";
   label: string;
   objectHint?: string;
@@ -56,6 +58,8 @@ export interface PerceptionCandidate {
 export interface PagePerception {
   ariaSnapshot: string;
   candidates: PerceptionCandidate[];
+  /** True when an open modal dialog is blocking the page. */
+  dialogOpen?: boolean;
 }
 
 export interface DomQueryResult {

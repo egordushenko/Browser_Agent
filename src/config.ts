@@ -18,6 +18,7 @@ export interface ReplConfig {
 
 export interface LlmConfig {
   apiKey?: string;
+  baseUrl?: string;
   orchestratorModel: string;
   provider: "openai";
   subAgentModel: string;
@@ -111,6 +112,7 @@ export function loadConfig(
     },
     llm: {
       apiKey: env.OPENAI_API_KEY,
+      baseUrl: env.BROWSER_AGENT_API_BASE_URL,
       orchestratorModel: env.BROWSER_AGENT_ORCHESTRATOR_MODEL ?? "gpt-5.4-mini",
       provider: "openai",
       subAgentModel: env.BROWSER_AGENT_DOM_MODEL ?? "gpt-5.4-nano",
@@ -140,6 +142,7 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS=5",
     "  BROWSER_AGENT_MAX_NO_PROGRESS=4",
     "  BROWSER_AGENT_STEP_TIMEOUT_MS=30000",
+    "  BROWSER_AGENT_API_BASE_URL=  # optional, e.g. https://openrouter.ai/api/v1",
     "  OPENAI_API_KEY=...",
   ].join("\n");
 }

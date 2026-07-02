@@ -42,4 +42,18 @@ describe("loadConfig", () => {
     expect(config.llm.apiKey).toBe("test-key");
     expect(config.llm.orchestratorModel).toBe("custom-orchestrator");
   });
+
+  test("supports an OpenAI-compatible base URL override for OpenRouter", () => {
+    const config = loadConfig(
+      {
+        OPENAI_API_KEY: "test-key",
+        BROWSER_AGENT_API_BASE_URL: "https://openrouter.ai/api/v1",
+      },
+      [],
+      "D:\\workspace\\agent",
+    );
+
+    expect(config.llm.baseUrl).toBe("https://openrouter.ai/api/v1");
+    expect(loadConfig({}, [], "D:\\workspace\\agent").llm.baseUrl).toBeUndefined();
+  });
 });

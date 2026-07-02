@@ -18,6 +18,7 @@ export interface OpenAIResponsesClient {
 
 export interface OpenAIProviderOptions {
   apiKey: string;
+  baseUrl?: string;
   client?: OpenAIResponsesClient;
   model: string;
 }
@@ -39,6 +40,7 @@ export class OpenAIProvider implements LLMProvider {
       options.client ??
       (new OpenAI({
         apiKey: options.apiKey,
+        baseURL: options.baseUrl,
       }) as unknown as OpenAIResponsesClient);
   }
 

@@ -21,12 +21,14 @@ async function main(): Promise<void> {
   const provider = config.llm.apiKey
     ? new OpenAIProvider({
         apiKey: config.llm.apiKey,
+        baseUrl: config.llm.baseUrl,
         model: config.llm.orchestratorModel,
       })
     : null;
   const domProvider = config.llm.apiKey
     ? new OpenAIProvider({
         apiKey: config.llm.apiKey,
+        baseUrl: config.llm.baseUrl,
         model: config.llm.subAgentModel,
       })
     : null;

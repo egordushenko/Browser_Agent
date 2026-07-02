@@ -1,6 +1,7 @@
 import process from "node:process";
 import { getUsageText, loadConfig, parseCliArgs } from "./config.js";
 import { launchBrowserSession } from "./browser/session.js";
+import { ObjectMemory } from "./agent/object-memory.js";
 import { runAgentTask } from "./agent/orchestrator.js";
 import { extractAllowedNavigationUrls } from "./agent/navigation-policy.js";
 import { SecurityGate } from "./agent/security.js";
@@ -56,9 +57,11 @@ async function main(): Promise<void> {
           return;
         }
 
+        const objectMemory = new ObjectMemory();
         const runtime = createBrowserToolRuntime(session.page, domAgent, {
           allowedNavigationUrls: extractAllowedNavigationUrls(task),
           askUser: async (question) => io.question(`Agent question: ${question}\nanswer> `),
+          objectMemory,
           screenshotDir: config.browser.screenshotDir,
         });
 
@@ -82,6 +85,7 @@ async function main(): Promise<void> {
               maxTextChars: config.context.maxTextChars,
             },
             limits: config.limits,
+            objectMemory,
             observe: async () => ({
               url: session.page.url(),
               title: await session.page.title().catch(() => ""),

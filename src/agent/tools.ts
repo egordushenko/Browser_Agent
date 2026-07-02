@@ -3,8 +3,9 @@ import path from "node:path";
 import type { Page } from "playwright";
 import { CandidateRegistry } from "../browser/candidate-registry.js";
 import { collectPagePerceptionWithRegistry } from "../browser/perception.js";
+import type { ObjectMemory } from "./object-memory.js";
 import type { DomAgent } from "../subagents/dom-agent.js";
-import type { DomQueryResult, ToolCall, ToolResult, ToolSchema } from "../types.js";
+import type { DomQueryResult, MemoryObject, ToolCall, ToolResult, ToolSchema } from "../types.js";
 
 export interface BrowserToolRuntime {
   askUser: (question: string) => Promise<{ question: string; answer?: string }>;
@@ -337,6 +338,7 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
 export interface BrowserToolRuntimeOptions {
   allowedNavigationUrls?: string[];
   askUser?: (question: string) => Promise<string>;
+  objectMemory?: ObjectMemory;
   screenshotDir?: string;
 }
 
@@ -357,6 +359,7 @@ export function createBrowserToolRuntime(
     click: async (candidateId) => {
       const candidate = candidateRegistry.get(candidateId);
       await (await resolveLocator(page, candidate.selector)).click();
+      options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId };
     },
     done: async (summary) => ({ summary }),
@@ -380,6 +383,7 @@ export function createBrowserToolRuntime(
     openCandidate: async (candidateId) => {
       const candidate = candidateRegistry.get(candidateId);
       await (await resolveLocator(page, candidate.selector)).click();
+      options?.objectMemory?.markOpenedByCandidate(candidateId);
       return { candidateId, href: candidate.href };
     },
     queryDom: async (question) => {
@@ -399,7 +403,11 @@ export function createBrowserToolRuntime(
         question,
         perception,
       });
-      return { ...result, candidates: perception.candidates };
+      return {
+        ...result,
+        ...ingestObjects(result, options?.objectMemory),
+        candidates: perception.candidates,
+      };
     },
     readPage: async (question) => {
       const { perception, registry } = await collectPagePerceptionWithRegistry(page, {
@@ -418,7 +426,11 @@ export function createBrowserToolRuntime(
         question: question ?? "Extract the relevant visible text from the current page.",
         perception,
       });
-      return { ...result, candidates: perception.candidates };
+      return {
+        ...result,
+        ...ingestObjects(result, options?.objectMemory),
+        candidates: perception.candidates,
+      };
     },
     scroll: async (direction, amount) => {
       const deltaY = direction === "up" ? -amount : amount;
@@ -435,6 +447,15 @@ export function createBrowserToolRuntime(
       return { seconds };
     },
   };
+}
+
+// Replace raw drafts with tracked memory objects so the orchestrator sees stable
+// objectIds and workflow statuses instead of page-scoped snippets.
+function ingestObjects(result: DomQueryResult, memory: ObjectMemory | undefined): { objects?: MemoryObject[] } {
+  if (!memory || !result.objects || result.objects.length === 0) {
+    return {};
+  }
+  return { objects: memory.ingest(result.objects) };
 }
 
 async function resolveLocator(page: Page, selector: string) {

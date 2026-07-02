@@ -1,5 +1,5 @@
 import type { LLMProvider } from "../llm/provider.js";
-import type { DomQueryResult, PagePerception } from "../types.js";
+import type { DomQueryResult, ExtractedObjectDraft, ExtractedObjectType, PagePerception } from "../types.js";
 
 export interface DomAgentQueryInput {
   perception: PagePerception;
@@ -14,9 +14,16 @@ export class DomAgent {
       system: [
         "You are a DOM perception sub-agent.",
         "Answer using only the compact page representation provided by the caller.",
-        'Return one flat strict JSON object: {"answer": string, "candidateId": string?, "confidence": "low"|"medium"|"high"}.',
+        'Return one flat strict JSON object: {"answer": string, "candidateId": string?, "confidence": "low"|"medium"|"high", "objects": array?}.',
         "Do not nest JSON inside the answer field and do not wrap the object in code fences.",
         "Use candidateId exactly as it appears in candidates when a clickable element is needed.",
+        "When the question asks to list, extract, or compare items (emails, products, vacancies, resumes, similar),",
+        'fill "objects" with one entry per visible item:',
+        '{"type": "email"|"product"|"vacancy"|"resume"|"other", "title": string, "fields": {string: string},',
+        ' "candidateId": string?, "actionCandidateId": string?}.',
+        "candidateId opens the item's detail view; actionCandidateId is the item's own action control",
+        "(delete, apply, add to cart) when it is visible next to the item. Both must come from candidates.",
+        "Put per-item facts (sender, price, salary, company, requirements) into fields as short strings.",
         "Never invent selectors, URLs, refs, hrefs, or candidate ids.",
         "A candidate with occurrences > 1 matches several elements at once; call that out as ambiguous",
         "and suggest an intermediate step (e.g. open the specific card first).",
@@ -73,10 +80,12 @@ function parseDomAgentJson(text: string | undefined): Omit<DomQueryResult, "usag
     }
   }
 
+  const objects = parseObjects(parsed.objects);
   return {
     answer: typeof parsed.answer === "string" ? parsed.answer : text,
     candidateId: typeof parsed.candidateId === "string" ? parsed.candidateId : undefined,
     confidence: normalizeConfidence(parsed.confidence),
+    ...(objects.length > 0 ? { objects } : {}),
   };
 }
 
@@ -84,6 +93,51 @@ interface DomAgentRawResult {
   answer?: unknown;
   candidateId?: unknown;
   confidence?: unknown;
+  objects?: unknown;
+}
+
+const OBJECT_TYPES: ExtractedObjectType[] = ["email", "product", "vacancy", "resume", "other"];
+
+function parseObjects(value: unknown): ExtractedObjectDraft[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+  const drafts: ExtractedObjectDraft[] = [];
+  for (const entry of value) {
+    if (!entry || typeof entry !== "object") {
+      continue;
+    }
+    const raw = entry as Record<string, unknown>;
+    if (typeof raw.title !== "string" || raw.title.trim().length === 0) {
+      continue;
+    }
+    drafts.push({
+      ...(typeof raw.actionCandidateId === "string" ? { actionCandidateId: raw.actionCandidateId } : {}),
+      ...(typeof raw.candidateId === "string" ? { candidateId: raw.candidateId } : {}),
+      fields: parseFields(raw.fields),
+      title: raw.title.trim(),
+      type: OBJECT_TYPES.includes(raw.type as ExtractedObjectType) ? (raw.type as ExtractedObjectType) : "other",
+      ...(typeof raw.url === "string" ? { url: raw.url } : {}),
+    });
+  }
+  return drafts;
+}
+
+function parseFields(value: unknown): Record<string, string> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return {};
+  }
+  const fields: Record<string, string> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    if (fieldValue === null || fieldValue === undefined) {
+      continue;
+    }
+    const text = typeof fieldValue === "string" ? fieldValue : String(fieldValue);
+    if (text.trim().length > 0) {
+      fields[key] = text;
+    }
+  }
+  return fields;
 }
 
 function normalizeConfidence(value: unknown): DomQueryResult["confidence"] {

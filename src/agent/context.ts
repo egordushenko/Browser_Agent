@@ -1,8 +1,10 @@
+import type { ObjectMemory } from "./object-memory.js";
 import type { CompactObservation, Message } from "../types.js";
 
 export interface AgentContextOptions {
   maxDetailedSteps: number;
   maxTextChars: number;
+  objectMemory?: ObjectMemory;
 }
 
 export interface BuildMessagesInput {
@@ -36,6 +38,8 @@ export class AgentContext {
       toolName: entry.toolName,
     }));
 
+    const memorySummary = this.options.objectMemory?.summary() ?? "";
+
     return [
       {
         role: "user",
@@ -47,6 +51,9 @@ export class AgentContext {
           `Task: ${input.task}`,
           "Current compact browser observation:",
           JSON.stringify(this.truncate(input.observation)),
+          ...(memorySummary
+            ? ["Known objects (objectId [type/status] title):", truncateForContext(memorySummary, this.options.maxTextChars)]
+            : []),
           "Recent detailed tool results:",
           JSON.stringify(detailedContext),
         ].join("\n"),

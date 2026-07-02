@@ -73,6 +73,45 @@ describe("DomAgent", () => {
     expect(broken).toMatchObject({ answer: "The page has no such element.", confidence: "low" });
   });
 
+  test("parses structured objects into extraction drafts", async () => {
+    const provider: LLMProvider = {
+      complete: async () => ({
+        text: JSON.stringify({
+          answer: "Найдено 2 письма.",
+          confidence: "high",
+          objects: [
+            {
+              type: "email",
+              title: "Скидки недели",
+              fields: { sender: "promo@shop.ru", spamScore: 0.9 },
+              candidateId: "c4",
+              actionCandidateId: "c5",
+            },
+            { type: "unknown-type", title: "Отчёт за июнь", fields: null },
+            { type: "email", title: "   " },
+          ],
+        }),
+        usage: { inputTokens: 5, outputTokens: 5, totalTokens: 10 },
+      }),
+    };
+
+    const result = await new DomAgent(provider).query({
+      question: "list emails",
+      perception: { ariaSnapshot: "-", candidates: [] },
+    });
+
+    expect(result.objects).toEqual([
+      {
+        actionCandidateId: "c5",
+        candidateId: "c4",
+        fields: { sender: "promo@shop.ru", spamScore: "0.9" },
+        title: "Скидки недели",
+        type: "email",
+      },
+      { fields: {}, title: "Отчёт за июнь", type: "other" },
+    ]);
+  });
+
   test("unwraps double-encoded JSON and numeric confidence from the sub-agent", async () => {
     const provider: LLMProvider = {
       complete: async () => ({

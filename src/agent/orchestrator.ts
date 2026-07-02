@@ -1,5 +1,6 @@
 import { ORCHESTRATOR_SYSTEM_PROMPT } from "./prompts.js";
 import { AgentContext } from "./context.js";
+import type { ObjectMemory } from "./object-memory.js";
 import { ProgressTracker } from "./progress.js";
 import { isGatedToolName, type SecurityGate } from "./security.js";
 import { executeToolCall, getToolSchemas, type BrowserToolRuntime } from "./tools.js";
@@ -37,6 +38,7 @@ export interface RunAgentTaskInput {
     maxTextChars: number;
   };
   limits: AgentLoopLimits;
+  objectMemory?: ObjectMemory;
   observe: () => Promise<CompactObservation>;
   onStepResult?: (step: AgentTaskStep, stepIndex: number) => void;
   onToolCall?: (call: ToolCall, stepIndex: number) => void;
@@ -138,6 +140,7 @@ export async function runAgentTask(input: RunAgentTaskInput): Promise<RunAgentTa
   const context = new AgentContext({
     maxDetailedSteps: input.contextOptions?.maxDetailedSteps ?? 8,
     maxTextChars: input.contextOptions?.maxTextChars ?? 2000,
+    objectMemory: input.objectMemory,
   });
   const progress = new ProgressTracker({ maxNoProgress: input.limits.maxNoProgress });
   const steps: AgentTaskStep[] = [];

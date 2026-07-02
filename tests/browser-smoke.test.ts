@@ -1,7 +1,9 @@
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import { chromium, type Browser, type Page } from "playwright";
+import { ObjectMemory } from "../src/agent/object-memory.js";
 import { createBrowserToolRuntime, executeToolCall } from "../src/agent/tools.js";
 import { collectPagePerception } from "../src/browser/perception.js";
+import type { DomAgent } from "../src/subagents/dom-agent.js";
 
 const FIXTURE_HTML = `<!DOCTYPE html>
 <html>
@@ -190,6 +192,36 @@ describe("browser smoke on a local fixture", () => {
     );
     expect(second.ok).toBe(false);
     expect(String(second.content)).toContain("Timeout");
+  }, 30_000);
+
+  test("query_dom ingests extracted objects into memory and click marks them opened", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const objectMemory = new ObjectMemory();
+    const domAgentStub = {
+      query: async () => ({
+        answer: "Two vacancies visible.",
+        confidence: "high" as const,
+        objects: [
+          { type: "vacancy" as const, title: "Junior Python Engineer", fields: { section: "job-1" }, candidateId: "c6" },
+          { type: "vacancy" as const, title: "AI Engineer", fields: { section: "job-2" }, candidateId: "c8" },
+        ],
+      }),
+    } as unknown as DomAgent;
+    const runtime = createBrowserToolRuntime(page, domAgentStub, { objectMemory });
+
+    const queried = await executeToolCall({ id: "q", name: "query_dom", arguments: { question: "list vacancies" } }, runtime);
+    expect(queried.ok).toBe(true);
+    const content = queried.content as { objects?: Array<{ objectId: string; status: string }> };
+    expect(content.objects?.map((object) => [object.objectId, object.status])).toEqual([
+      ["o1", "seen"],
+      ["o2", "seen"],
+    ]);
+
+    const opened = await executeToolCall({ id: "open", name: "open_candidate", arguments: { candidateId: "c6" } }, runtime);
+    expect(opened.ok).toBe(true);
+    expect(objectMemory.get("o1").status).toBe("opened");
+    expect(objectMemory.get("o2").status).toBe("seen");
   }, 30_000);
 
   test("scroll and wait run without touching the DOM", async (ctx) => {

@@ -63,5 +63,42 @@ export interface DomQueryResult {
   candidateId?: string;
   candidates?: PerceptionCandidate[];
   confidence: "low" | "medium" | "high";
+  objects?: ExtractedObjectDraft[];
   usage?: Usage;
+}
+
+export type ExtractedObjectType = "email" | "product" | "vacancy" | "resume" | "other";
+
+export type ObjectStatus =
+  | "seen"
+  | "opened"
+  | "details_extracted"
+  | "reviewed"
+  | "selected"
+  | "rejected"
+  | "action_ready"
+  | "action_done";
+
+/** Structured item extracted by the DOM sub-agent from the current page. */
+export interface ExtractedObjectDraft {
+  /** candidateId of the item's per-object action control (delete, apply, add), when visible. */
+  actionCandidateId?: string;
+  /** candidateId that opens the item's detail view, when clickable. */
+  candidateId?: string;
+  fields?: Record<string, string>;
+  title: string;
+  type: ExtractedObjectType;
+  url?: string;
+}
+
+/** An extracted object tracked across pages with a stable objectId and workflow status. */
+export interface MemoryObject {
+  actionCandidateId?: string;
+  candidateId?: string;
+  fields: Record<string, string>;
+  objectId: string;
+  status: ObjectStatus;
+  title: string;
+  type: ExtractedObjectType;
+  url?: string;
 }

@@ -28,6 +28,57 @@ describe("getToolSchemas", () => {
       },
     });
   });
+
+  test("strict schemas list every property as required (OpenAI strict-mode invariant)", () => {
+    for (const schema of getToolSchemas()) {
+      const propertyKeys = Object.keys(schema.parameters.properties).sort();
+      const required = [...(schema.parameters.required ?? [])].sort();
+      expect(required, `tool ${schema.name}`).toEqual(propertyKeys);
+    }
+  });
+
+  test("null arguments for nullable fields fall back to defaults", async () => {
+    const actions: string[] = [];
+    const runtime: BrowserToolRuntime = {
+      navigate: async () => {
+        throw new Error("unexpected");
+      },
+      queryDom: async () => {
+        throw new Error("unexpected");
+      },
+      click: async () => {
+        throw new Error("unexpected");
+      },
+      type: async () => {
+        throw new Error("unexpected");
+      },
+      scroll: async (direction, amount) => {
+        actions.push(`scroll:${direction}:${amount}`);
+        return { direction, amount };
+      },
+      wait: async (seconds) => ({ seconds }),
+      readPage: async (question) => {
+        actions.push(`read:${question ?? "default"}`);
+        return { answer: "Page text", confidence: "medium" };
+      },
+      askUser: async () => {
+        throw new Error("unexpected");
+      },
+      done: async () => {
+        throw new Error("unexpected");
+      },
+    };
+
+    const scrolled = await executeToolCall(
+      { id: "s", name: "scroll", arguments: { direction: "down", amount: null } },
+      runtime,
+    );
+    const read = await executeToolCall({ id: "r", name: "read_page", arguments: { question: null } }, runtime);
+
+    expect(scrolled.ok).toBe(true);
+    expect(read.ok).toBe(true);
+    expect(actions).toEqual(["scroll:down:700", "read:default"]);
+  });
 });
 
 describe("executeToolCall", () => {

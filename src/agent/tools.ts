@@ -105,11 +105,11 @@ export function getToolSchemas(): ToolSchema[] {
             enum: ["up", "down"],
           },
           amount: {
-            type: "number",
-            description: "Scroll amount in pixels.",
+            type: ["number", "null"],
+            description: "Scroll amount in pixels; null for the default.",
           },
         },
-        required: ["direction"],
+        required: ["direction", "amount"],
         additionalProperties: false,
       },
     },
@@ -139,11 +139,11 @@ export function getToolSchemas(): ToolSchema[] {
         type: "object",
         properties: {
           question: {
-            type: "string",
-            description: "Optional reading goal.",
+            type: ["string", "null"],
+            description: "Reading goal; null for a general extraction.",
           },
         },
-        required: [],
+        required: ["question"],
         additionalProperties: false,
       },
     },
@@ -156,11 +156,11 @@ export function getToolSchemas(): ToolSchema[] {
         type: "object",
         properties: {
           full_page: {
-            type: "boolean",
-            description: "Capture the full scrollable page instead of the viewport.",
+            type: ["boolean", "null"],
+            description: "Capture the full scrollable page instead of the viewport; null for viewport.",
           },
         },
-        required: [],
+        required: ["full_page"],
         additionalProperties: false,
       },
     },
@@ -404,9 +404,10 @@ function readRequiredString(value: Record<string, unknown>, key: string): string
   return field;
 }
 
+// Strict tool schemas mark optional fields as nullable, so null means "not provided".
 function readOptionalString(value: Record<string, unknown>, key: string): string | undefined {
   const field = value[key];
-  if (field === undefined) {
+  if (field === undefined || field === null) {
     return undefined;
   }
   if (typeof field !== "string") {
@@ -417,7 +418,7 @@ function readOptionalString(value: Record<string, unknown>, key: string): string
 
 function readOptionalNumber(value: Record<string, unknown>, key: string): number | undefined {
   const field = value[key];
-  if (field === undefined) {
+  if (field === undefined || field === null) {
     return undefined;
   }
   if (typeof field !== "number" || !Number.isFinite(field)) {
@@ -428,7 +429,7 @@ function readOptionalNumber(value: Record<string, unknown>, key: string): number
 
 function readOptionalBoolean(value: Record<string, unknown>, key: string): boolean | undefined {
   const field = value[key];
-  if (field === undefined) {
+  if (field === undefined || field === null) {
     return undefined;
   }
   if (typeof field !== "boolean") {

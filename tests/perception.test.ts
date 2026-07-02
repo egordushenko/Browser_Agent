@@ -110,6 +110,58 @@ describe("collectPagePerception", () => {
     ]);
   });
 
+  test("scopes repeated controls to the nearest stable ancestor when available", async () => {
+    const page: PagePerceptionPage = {
+      locator: () => ({
+        ariaSnapshot: async () => "-",
+      }),
+      evaluate: async (fn) =>
+        fn([
+          {
+            tagName: "A",
+            id: "",
+            text: "Apply",
+            role: "button",
+            ariaLabel: null,
+            testId: null,
+            name: null,
+            placeholder: null,
+            type: null,
+            ancestorSelector: "#job-1",
+          },
+          {
+            tagName: "A",
+            id: "",
+            text: "Apply",
+            role: "button",
+            ariaLabel: null,
+            testId: null,
+            name: null,
+            placeholder: null,
+            type: null,
+            ancestorSelector: "#job-2",
+          },
+        ]),
+    };
+
+    const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 40 });
+
+    expect(perception.candidates).toEqual([
+      {
+        label: "Apply",
+        selector: 'css=#job-1 >> role=button[name="Apply"]',
+        selectorSource: "role",
+        tagName: "a",
+      },
+      {
+        label: "Apply",
+        selector: 'css=#job-2 >> role=button[name="Apply"]',
+        selectorSource: "role",
+        tagName: "a",
+      },
+    ]);
+  });
+
   test("prefers role selectors for controls whose text is not unique enough", async () => {
     const page: PagePerceptionPage = {
       locator: () => ({

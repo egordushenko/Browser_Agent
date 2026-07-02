@@ -57,6 +57,7 @@ describe("runAgentStep", () => {
     });
 
     expect(requests).toHaveLength(1);
+    expect(requests[0].system).toContain("open that item's detail view before treating hidden details as known");
     expect(requests[0].tools.map((tool) => tool.name)).toEqual([
       "navigate",
       "query_dom",

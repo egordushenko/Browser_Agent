@@ -387,18 +387,30 @@ export function createBrowserToolRuntime(
 }
 
 async function resolveLocator(page: Page, selector: string) {
-  if (selector.startsWith("css=")) {
-    return page.locator(selector.slice("css=".length));
+  const normalizedSelector = normalizeRuntimeSelector(selector);
+  if (normalizedSelector.startsWith("css=")) {
+    return page.locator(normalizedSelector.slice("css=".length));
   }
-  if (selector.startsWith("text=")) {
-    const text = selector.slice("text=".length);
+  if (normalizedSelector.startsWith("text=")) {
+    const text = normalizedSelector.slice("text=".length);
     const exact = page.getByText(text, { exact: true });
     if ((await exact.count()) === 1) {
       return exact;
     }
     return page.getByText(text);
   }
-  return page.locator(selector);
+  return page.locator(normalizedSelector);
+}
+
+function normalizeRuntimeSelector(selector: string): string {
+  const trimmed = selector.trim();
+  if (/^ref=e\d+$/i.test(trimmed)) {
+    throw new Error("ARIA snapshot refs like [ref=e123] are not runtime selectors; ask query_dom for a candidate selector.");
+  }
+  if (trimmed.startsWith("role=")) {
+    return trimmed.replace(/\[ref=e\d+\]/gi, "");
+  }
+  return trimmed;
 }
 
 function readRequiredString(value: Record<string, unknown>, key: string): string {

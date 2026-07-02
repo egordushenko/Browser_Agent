@@ -15,6 +15,14 @@ const FIXTURE_HTML = `<!DOCTYPE html>
     <ul>
       <li>Classic hot dog <button aria-label="Add classic hot dog to cart">Add</button></li>
     </ul>
+    <section id="job-1">
+      <a href="/job-1">Junior Python Engineer</a>
+      <a tabindex="0" role="button" href="#apply-job-1">Apply</a>
+    </section>
+    <section id="job-2">
+      <a href="/job-2">AI Engineer</a>
+      <a tabindex="0" role="button" href="#apply-job-2">Apply</a>
+    </section>
     <button id="vanishing">Vanishing button</button>
     <output id="active-tab">jobs</output>
     <output id="cart-count">0</output>
@@ -95,6 +103,34 @@ describe("browser smoke on a local fixture", () => {
 
     const clicked = await executeToolCall(
       { id: "tab", name: "click", arguments: { selector: 'role=tab[name="Resume"]' } },
+      runtime,
+    );
+
+    expect(clicked.ok).toBe(true);
+    expect(await page.textContent("#active-tab")).toBe("resume");
+  }, 30_000);
+
+  test("scoped role selectors click a repeated control inside a specific card", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const clicked = await executeToolCall(
+      { id: "apply-2", name: "click", arguments: { selector: 'css=[id="job-2"] >> role=button[name="Apply"]' } },
+      runtime,
+    );
+
+    expect(clicked.ok).toBe(true);
+    expect(page.url()).toContain("#apply-job-2");
+  }, 30_000);
+
+  test("role selectors ignore aria snapshot refs that are not Playwright runtime attributes", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const clicked = await executeToolCall(
+      { id: "tab-ref", name: "click", arguments: { selector: 'role=tab[name="Resume"][ref=e123]' } },
       runtime,
     );
 

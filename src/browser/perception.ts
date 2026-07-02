@@ -12,6 +12,7 @@ export interface PagePerceptionPage {
 }
 
 interface RawCandidateElement {
+  ancestorSelector?: string | null;
   ariaLabel: string | null;
   id: string;
   name: string | null;
@@ -96,17 +97,36 @@ function collectInteractiveElements(testElements?: RawCandidateElement[]): RawCa
       return style.visibility !== "hidden" && style.display !== "none" && rect.width > 0 && rect.height > 0;
     })
     .slice(0, 120)
-    .map((element) => ({
-      ariaLabel: element.getAttribute("aria-label"),
-      id: element.id,
-      name: element.getAttribute("name"),
-      placeholder: element.getAttribute("placeholder"),
-      role: element.getAttribute("role"),
-      tagName: element.tagName,
-      testId: element.getAttribute("data-testid") ?? element.getAttribute("data-test"),
-      text: element.innerText ?? element.textContent ?? "",
-      type: element.getAttribute("type"),
-    }));
+    .map((element) => {
+      const attrSelector = (name: string, value: string) => `[${name}="${value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')}"]`;
+      const findAncestorSelector = () => {
+        let current = element.parentElement;
+        while (current && current !== document.body && current !== document.documentElement) {
+          if (current.id) {
+            return attrSelector("id", current.id);
+          }
+          const testId = current.getAttribute("data-testid") ?? current.getAttribute("data-test");
+          if (testId) {
+            return attrSelector(current.hasAttribute("data-testid") ? "data-testid" : "data-test", testId);
+          }
+          current = current.parentElement;
+        }
+        return null;
+      };
+
+      return {
+        ancestorSelector: findAncestorSelector(),
+        ariaLabel: element.getAttribute("aria-label"),
+        id: element.id,
+        name: element.getAttribute("name"),
+        placeholder: element.getAttribute("placeholder"),
+        role: element.getAttribute("role"),
+        tagName: element.tagName,
+        testId: element.getAttribute("data-testid") ?? element.getAttribute("data-test"),
+        text: element.innerText ?? element.textContent ?? "",
+        type: element.getAttribute("type"),
+      };
+    });
 }
 
 function toPerceptionCandidate(
@@ -154,7 +174,11 @@ function chooseSelector(raw: RawCandidateElement): Pick<PerceptionCandidate, "se
       .map((line) => line.trim())
       .find((line) => line.length > 0);
     if (accessibleName) {
-      return { selectorSource: "role", value: `role=${raw.role}[name="${escapeAttributeValue(accessibleName)}"]` };
+      const roleSelector = `role=${raw.role}[name="${escapeAttributeValue(accessibleName)}"]`;
+      return {
+        selectorSource: "role",
+        value: raw.ancestorSelector ? `css=${raw.ancestorSelector} >> ${roleSelector}` : roleSelector,
+      };
     }
   }
   const firstTextLine = raw.text

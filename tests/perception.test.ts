@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { collectPagePerception, truncateText } from "../src/browser/perception.js";
+import { collectPagePerception, collectPagePerceptionWithRegistry, truncateText } from "../src/browser/perception.js";
 import type { PagePerceptionPage } from "../src/browser/perception.js";
 
 describe("truncateText", () => {
@@ -81,6 +81,39 @@ describe("collectPagePerception", () => {
       text: "  \nПостоянная работа, подработка\nAI-first Product Engineer · Full-Stack\n80 000 ₽",
     });
     expect(JSON.stringify(perception.candidates[0])).not.toContain("selector");
+  });
+
+  test("keeps candidate ids stable when the same page is re-queried", async () => {
+    const rawElement = (id: string, text: string) => ({
+      tagName: "BUTTON",
+      id,
+      text,
+      role: null,
+      ariaLabel: null,
+      testId: null,
+      name: null,
+      placeholder: null,
+      type: null,
+    });
+    const makePage = (elements: ReturnType<typeof rawElement>[]): PagePerceptionPage => ({
+      locator: () => ({ ariaSnapshot: async () => "-" }),
+      evaluate: async (fn) => fn(elements),
+    });
+    const options = { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 40 };
+
+    const first = await collectPagePerceptionWithRegistry(makePage([rawElement("apply-1", "Apply 1"), rawElement("apply-2", "Apply 2")]), options);
+    expect(first.perception.candidates.map((candidate) => candidate.candidateId)).toEqual(["c1", "c2"]);
+
+    // Re-render: apply-1 disappeared, a new button appeared; apply-2 must keep its id.
+    const second = await collectPagePerceptionWithRegistry(
+      makePage([rawElement("apply-2", "Apply 2"), rawElement("apply-3", "Apply 3")]),
+      options,
+      first.registry,
+    );
+
+    const byId = Object.fromEntries(second.perception.candidates.map((candidate) => [candidate.label, candidate.candidateId]));
+    expect(byId["Apply 2"]).toBe("c2");
+    expect(byId["Apply 3"]).toBe("c3");
   });
 
   test("collapses repeated identical selectors into one candidate with an occurrences count", async () => {

@@ -17,6 +17,15 @@ export class CandidateRegistry {
     private readonly records: CandidateRecord[],
   ) {}
 
+  /** URL part of the fingerprint; candidate ids stay stable while it is unchanged. */
+  get pageUrl(): string {
+    return this.pageFingerprint.split("|")[0] ?? "";
+  }
+
+  all(): readonly CandidateRecord[] {
+    return this.records;
+  }
+
   get(candidateId: string): CandidateRecord {
     const record = this.records.find((candidate) => candidate.candidateId === candidateId);
     if (!record) {

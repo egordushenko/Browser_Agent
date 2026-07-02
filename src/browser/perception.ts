@@ -43,6 +43,7 @@ export async function collectPagePerception(
 export async function collectPagePerceptionWithRegistry(
   page: PagePerceptionPage | Page,
   options: PagePerceptionOptions,
+  previousRegistry?: CandidateRegistry,
 ): Promise<PagePerceptionWithRegistry> {
   const perceptionPage = page as PagePerceptionPage;
   const [ariaSnapshot, rawCandidates] = await Promise.all([
@@ -57,6 +58,8 @@ export async function collectPagePerceptionWithRegistry(
         .map((candidate: RawCandidateElement) => toCandidateDraft(candidate, options, pageFingerprint))
         .filter(isDefined),
     ),
+    pageFingerprint,
+    previousRegistry,
   );
 
   return {
@@ -244,11 +247,47 @@ function dedupeCandidates(candidates: Array<Omit<CandidateRecord, "candidateId">
   return deduped;
 }
 
-function assignCandidateIds(candidates: Array<Omit<CandidateRecord, "candidateId">>): CandidateRecord[] {
-  return candidates.map((candidate, index) => ({
-    ...candidate,
-    candidateId: `c${index + 1}`,
-  }));
+// Re-querying the same page must keep candidate ids stable: the orchestrator collects
+// ids across several query_dom results and a reshuffle silently retargets its clicks.
+function assignCandidateIds(
+  candidates: Array<Omit<CandidateRecord, "candidateId">>,
+  pageFingerprint: string,
+  previousRegistry?: CandidateRegistry,
+): CandidateRecord[] {
+  const pageUrl = pageFingerprint.split("|")[0] ?? "";
+  const samePage = previousRegistry !== undefined && previousRegistry.pageUrl === pageUrl;
+  const reusableIds = new Map<string, string>(
+    samePage ? previousRegistry.all().map((record) => [record.selector, record.candidateId]) : [],
+  );
+
+  const used = new Set<string>();
+  let nextIndex = samePage ? maxCandidateIndex(previousRegistry) + 1 : 1;
+
+  return candidates.map((candidate) => {
+    const reused = reusableIds.get(candidate.selector);
+    if (reused && !used.has(reused)) {
+      used.add(reused);
+      return { ...candidate, candidateId: reused };
+    }
+    while (used.has(`c${nextIndex}`)) {
+      nextIndex += 1;
+    }
+    const candidateId = `c${nextIndex}`;
+    nextIndex += 1;
+    used.add(candidateId);
+    return { ...candidate, candidateId };
+  });
+}
+
+function maxCandidateIndex(registry: CandidateRegistry): number {
+  let max = 0;
+  for (const record of registry.all()) {
+    const match = /^c(\d+)$/.exec(record.candidateId);
+    if (match) {
+      max = Math.max(max, Number(match[1]));
+    }
+  }
+  return max;
 }
 
 function inferCandidateKind(raw: RawCandidateElement): CandidateRecord["kind"] {

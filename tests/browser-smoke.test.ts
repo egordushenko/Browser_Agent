@@ -423,6 +423,21 @@ describe("browser smoke on a local fixture", () => {
     expect(clicked.ok).toBe(true);
   }, 30_000);
 
+  test("re-querying the same page keeps candidate ids stable", async (ctx) => {
+    if (!browser) return ctx.skip();
+    await page.setContent(FIXTURE_HTML);
+    const runtime = createBrowserToolRuntime(page);
+
+    const first = await executeToolCall({ id: "q1", name: "query_dom", arguments: { question: "collect" } }, runtime);
+    const second = await executeToolCall({ id: "q2", name: "query_dom", arguments: { question: "collect again" } }, runtime);
+
+    const firstIds = (first.content as { candidates: Array<{ candidateId: string; label: string }> }).candidates;
+    const secondIds = (second.content as { candidates: Array<{ candidateId: string; label: string }> }).candidates;
+    expect(secondIds.map((candidate) => [candidate.candidateId, candidate.label])).toEqual(
+      firstIds.map((candidate) => [candidate.candidateId, candidate.label]),
+    );
+  }, 30_000);
+
   test("scroll and wait run without touching the DOM", async (ctx) => {
     if (!browser) return ctx.skip();
     await page.setContent(FIXTURE_HTML);

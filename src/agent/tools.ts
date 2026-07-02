@@ -620,10 +620,14 @@ export function createBrowserToolRuntime(
       };
     },
     queryDom: async (question) => {
-      const { perception, registry } = await collectPagePerceptionWithRegistry(getPage(), {
-        ariaSnapshotTimeoutMs: 5000,
-        maxCandidateTextLength: 120,
-      });
+      const { perception, registry } = await collectPagePerceptionWithRegistry(
+        getPage(),
+        {
+          ariaSnapshotTimeoutMs: 5000,
+          maxCandidateTextLength: 120,
+        },
+        candidateRegistry,
+      );
       candidateRegistry = registry;
       if (!domAgent) {
         return {
@@ -643,10 +647,14 @@ export function createBrowserToolRuntime(
       };
     },
     readPage: async (question) => {
-      const { perception, registry } = await collectPagePerceptionWithRegistry(getPage(), {
-        ariaSnapshotTimeoutMs: 5000,
-        maxCandidateTextLength: 120,
-      });
+      const { perception, registry } = await collectPagePerceptionWithRegistry(
+        getPage(),
+        {
+          ariaSnapshotTimeoutMs: 5000,
+          maxCandidateTextLength: 120,
+        },
+        candidateRegistry,
+      );
       candidateRegistry = registry;
       if (!domAgent) {
         return {

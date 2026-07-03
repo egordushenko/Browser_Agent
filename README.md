@@ -38,7 +38,7 @@ Expected behavior in that scenario:
 
 Assumption: before the task starts, the user is already logged in to `hh.ru` in the persistent Chrome profile.
 
-Video link: to be added.
+Video: [HH stress-test recording](https://disk.yandex.ru/i/GOJYr6vzLmYUSA).
 
 ## Key Design Choices
 

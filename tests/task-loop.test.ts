@@ -108,6 +108,50 @@ describe("runAgentTask", () => {
     expect(result.steps).toHaveLength(1);
   });
 
+  test("a timed-out LLM step is recoverable and the run continues instead of dying", async () => {
+    let calls = 0;
+    const provider: LLMProvider = {
+      complete: async () => {
+        calls += 1;
+        if (calls === 1) {
+          // Simulate a reasoning stall that exceeds the step timeout.
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          return {
+            toolCall: { id: "slow", name: "navigate", arguments: { url: "https://example.com" } },
+            usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+          };
+        }
+        return {
+          toolCall: { id: "done", name: "done", arguments: { summary: "Recovered and finished.", incomplete_reason: null } },
+          usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+        };
+      },
+    };
+    const runtime: BrowserToolRuntime = {
+      askUser: async (question) => ({ question }),
+      click: async (candidateId) => ({ candidateId }),
+      done: async (summary) => ({ summary }),
+      navigate: async (url) => ({ url, title: "Example" }),
+      openCandidate: async (candidateId) => ({ candidateId }),
+      queryDom: async () => ({ answer: "-", confidence: "medium" }),
+      readPage: async () => ({ answer: "-", confidence: "medium" }),
+      scroll: async (direction, amount) => ({ direction, amount }),
+      type: async (candidateId, text) => ({ candidateId, textLength: text.length }),
+      wait: async (seconds) => ({ seconds }),
+    };
+
+    const result = await runAgentTask({
+      limits: { maxConsecutiveErrors: 3, maxNoProgress: 3, maxSteps: 5, stepTimeoutMs: 10 },
+      observe: async () => ({ url: "https://example.com", title: "Example", lastToolResult: null }),
+      provider,
+      runtime,
+      task: "Recover from a slow step",
+    });
+
+    expect(result.steps[0].toolResult).toMatchObject({ ok: false, toolName: "llm" });
+    expect(result.stopReason).toBe("done");
+  });
+
   test("gates open_candidate and hands the classifier the target element metadata", async () => {
     const classifierInputs: string[] = [];
     const opened: string[] = [];

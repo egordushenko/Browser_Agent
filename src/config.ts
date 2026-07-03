@@ -110,7 +110,8 @@ export function loadConfig(
       maxConsecutiveErrors: Number(env.BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS ?? "5"),
       maxNoProgress: Number(env.BROWSER_AGENT_MAX_NO_PROGRESS ?? "4"),
       maxSteps: Number(env.BROWSER_AGENT_MAX_STEPS ?? "40"),
-      stepTimeoutMs: Number(env.BROWSER_AGENT_STEP_TIMEOUT_MS ?? "30000"),
+      // Reasoning models (gpt-5) can think for well over 30s on a hard step; keep a generous bound.
+      stepTimeoutMs: Number(env.BROWSER_AGENT_STEP_TIMEOUT_MS ?? "120000"),
     },
     llm: {
       apiKey: env.OPENAI_API_KEY,
@@ -144,7 +145,7 @@ export function getUsageText(): string {
     "  BROWSER_AGENT_MAX_STEPS=40",
     "  BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS=5",
     "  BROWSER_AGENT_MAX_NO_PROGRESS=4",
-    "  BROWSER_AGENT_STEP_TIMEOUT_MS=30000",
+    "  BROWSER_AGENT_STEP_TIMEOUT_MS=120000",
     "  BROWSER_AGENT_API_BASE_URL=  # optional, e.g. https://openrouter.ai/api/v1",
     "  OPENAI_API_KEY=...",
   ].join("\n");

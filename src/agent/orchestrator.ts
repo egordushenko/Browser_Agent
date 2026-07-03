@@ -152,16 +152,36 @@ export async function runAgentTask(input: RunAgentTaskInput): Promise<RunAgentTa
 
   for (let index = 0; index < input.limits.maxSteps; index += 1) {
     const observation = await input.observe();
-    const step = await runAgentStep({
-      context,
-      observation,
-      onToolCall: (call) => input.onToolCall?.(call, index),
-      provider: input.provider,
-      runtime: input.runtime,
-      securityGate: input.securityGate,
-      stepTimeoutMs: input.limits.stepTimeoutMs,
-      task: input.task,
-    });
+
+    let step: RunAgentStepResult;
+    try {
+      step = await runAgentStep({
+        context,
+        observation,
+        onToolCall: (call) => input.onToolCall?.(call, index),
+        provider: input.provider,
+        runtime: input.runtime,
+        securityGate: input.securityGate,
+        stepTimeoutMs: input.limits.stepTimeoutMs,
+        task: input.task,
+      });
+    } catch (error) {
+      // A failed LLM call (timeout, transient provider error) must not discard the whole run:
+      // record it as a recoverable error step and let the loop re-observe and retry.
+      const message = error instanceof Error ? error.message : String(error);
+      const errorStep: AgentTaskStep = {
+        observation,
+        toolResult: { ok: false, toolName: "llm", content: message },
+        usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
+      };
+      steps.push(errorStep);
+      input.onStepResult?.(errorStep, index);
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= input.limits.maxConsecutiveErrors) {
+        return { steps, stopReason: "max_consecutive_errors" };
+      }
+      continue;
+    }
 
     const taskStep: AgentTaskStep = {
       observation,

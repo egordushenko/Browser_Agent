@@ -16,6 +16,7 @@ describe("loadConfig", () => {
     expect(config.limits.maxSteps).toBe(40);
     expect(config.limits.maxConsecutiveErrors).toBe(5);
     expect(config.limits.maxNoProgress).toBe(4);
+    expect(config.limits.stepTimeoutMs).toBe(120000);
   });
 
   test("allows profile reset and profile dir overrides from argv", () => {

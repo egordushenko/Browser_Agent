@@ -480,6 +480,7 @@ export async function executeToolCall(call: ToolCall, runtime: BrowserToolRuntim
 export interface BrowserToolRuntimeOptions {
   allowedNavigationUrls?: string[];
   askUser?: (question: string) => Promise<string>;
+  maxCandidates?: number;
   objectMemory?: ObjectMemory;
   screenshotDir?: string;
 }
@@ -624,6 +625,7 @@ export function createBrowserToolRuntime(
         getPage(),
         {
           ariaSnapshotTimeoutMs: 5000,
+          maxCandidates: options?.maxCandidates,
           maxCandidateTextLength: 120,
         },
         candidateRegistry,
@@ -651,6 +653,7 @@ export function createBrowserToolRuntime(
         getPage(),
         {
           ariaSnapshotTimeoutMs: 5000,
+          maxCandidates: options?.maxCandidates,
           maxCandidateTextLength: 120,
         },
         candidateRegistry,

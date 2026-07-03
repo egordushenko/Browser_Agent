@@ -384,10 +384,10 @@ describe("browser smoke on a local fixture", () => {
 
   test("modal dialog controls survive the candidate cap and are flagged (hh country-confirm pattern)", async (ctx) => {
     if (!browser) return ctx.skip();
-    // 200 buttons exhaust the 120-candidate cap; the modal is portaled to the end of body.
+    // 350 buttons exhaust the 300-candidate cap; the modal is portaled to the end of body.
     const longPageWithModal = `<!DOCTYPE html>
       <html><head><title>Long list</title></head><body>
-        ${Array.from({ length: 200 }, (_, index) => `<button>Vacancy action ${index + 1}</button>`).join("\n")}
+        ${Array.from({ length: 350 }, (_, index) => `<button>Vacancy action ${index + 1}</button>`).join("\n")}
         <div role="dialog" aria-modal="true">
           <p>Вы откликаетесь на вакансию в другой стране. Продолжить?</p>
           <button id="dialog-continue">Продолжить</button>
@@ -402,7 +402,8 @@ describe("browser smoke on a local fixture", () => {
     });
 
     expect(perception.dialogOpen).toBe(true);
-    // Dialog content (container + its buttons) is ranked ahead of the 200 list buttons.
+    expect(perception.candidates.length).toBe(300);
+    // Dialog content (container + its buttons) is ranked ahead of the list buttons.
     const firstThree = perception.candidates.slice(0, 3);
     expect(firstThree.every((candidate) => candidate.inDialog)).toBe(true);
     expect(firstThree.map((candidate) => candidate.label)).toEqual(

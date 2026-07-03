@@ -40,7 +40,8 @@ describe("collectPagePerception", () => {
 
     const perception = await collectPagePerception(page, { ariaSnapshotTimeoutMs: 5000, maxCandidateTextLength: 40 });
 
-    expect(perception.ariaSnapshot).toBe('- textbox "Search" [ref=e2]');
+    // Snapshot refs are stripped: they are not resolvable ids and only tempt the sub-agent.
+    expect(perception.ariaSnapshot).toBe('- textbox "Search"');
     expect(perception.candidates).toEqual([
       {
         candidateId: "c1",

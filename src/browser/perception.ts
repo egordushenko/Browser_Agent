@@ -4,8 +4,12 @@ import type { PagePerception } from "../types.js";
 
 export interface PagePerceptionOptions {
   ariaSnapshotTimeoutMs: number;
+  /** Cap on collected interactive elements; busy list pages need several hundred. */
+  maxCandidates?: number;
   maxCandidateTextLength: number;
 }
+
+const DEFAULT_MAX_CANDIDATES = 300;
 
 export interface PagePerceptionPage {
   evaluate: <T>(fn: (testElements?: RawCandidateElement[]) => T) => Promise<T>;
@@ -46,11 +50,14 @@ export async function collectPagePerceptionWithRegistry(
   previousRegistry?: CandidateRegistry,
 ): Promise<PagePerceptionWithRegistry> {
   const perceptionPage = page as PagePerceptionPage;
-  const [ariaSnapshot, rawCandidates] = await Promise.all([
+  const [rawSnapshot, rawCandidates] = await Promise.all([
     perceptionPage.locator("body").ariaSnapshot({ mode: "ai", timeout: options.ariaSnapshotTimeoutMs }),
-    collectRawCandidates(page),
+    collectRawCandidates(page, options.maxCandidates ?? DEFAULT_MAX_CANDIDATES),
   ]);
 
+  // Snapshot refs ([ref=e123]) are not resolvable by any tool; stripping them keeps the
+  // sub-agent from passing them off as candidate ids and saves tokens.
+  const ariaSnapshot = rawSnapshot.replace(/\s*\[ref=[^\]]+\]/g, "");
   const pageFingerprint = fingerprintPage(page, ariaSnapshot);
   const records = assignCandidateIds(
     dedupeCandidates(
@@ -79,9 +86,12 @@ export function truncateText(text: string, maxLength: number): string {
   return `${text.slice(0, maxLength)}...`;
 }
 
-async function collectRawCandidates(page: PagePerceptionPage | Page): Promise<RawCandidateElement[]> {
+async function collectRawCandidates(
+  page: PagePerceptionPage | Page,
+  maxCandidates: number,
+): Promise<RawCandidateElement[]> {
   if (isBrowserPage(page)) {
-    return (page as Page).evaluate(COLLECT_INTERACTIVE_ELEMENTS_SCRIPT);
+    return (page as Page).evaluate(buildCollectInteractiveElementsScript(maxCandidates));
   }
   return page.evaluate(collectInteractiveElements);
 }
@@ -93,7 +103,7 @@ function isBrowserPage(page: PagePerceptionPage | Page): page is Page {
 // Real Playwright pages evaluate this as a self-contained expression. Keeping all
 // browser-context helpers inline avoids bundler-injected closure references such
 // as "__name" leaking into Chrome.
-const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
+const buildCollectInteractiveElementsScript = (maxCandidates: number) => String.raw`(() => {
   const selector = [
     "a",
     "button",
@@ -123,7 +133,7 @@ const COLLECT_INTERACTIVE_ELEMENTS_SCRIPT = String.raw`(() => {
   return visible
     .filter(isInDialog)
     .concat(visible.filter((element) => !isInDialog(element)))
-    .slice(0, 120)
+    .slice(0, ${maxCandidates})
     .map((element) => {
       const findAncestorSelector = () => {
         let current = element.parentElement;

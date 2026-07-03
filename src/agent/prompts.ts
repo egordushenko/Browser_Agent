@@ -45,6 +45,8 @@ export const SECURITY_CLASSIFIER_SYSTEM_PROMPT = [
   "When the target metadata is ambiguous or missing for a click on an unknown control, prefer requiresConfirmation=true.",
   "However, dismissing or closing informational popups and promos (labels like OK, Got it, Отлично, Закрыть,",
   "Понятно) only removes an overlay and is reversible: it needs no confirmation.",
+  "Likewise, opening a detail page merely to view an item (a resume, product, vacancy, message) is reversible",
+  "navigation and needs no confirmation; the binding step is submitting, not viewing.",
   "Decide whether executing this action is potentially irreversible or destructive: payment, purchase,",
   "order or checkout confirmation, deletion, sending a message or email, or submitting a binding form.",
   "Judge the semantic intent of this specific action in context; typing into a search box, opening pages,",

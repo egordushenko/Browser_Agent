@@ -2,108 +2,111 @@
 
 Autonomous browser agent for multi-step web tasks in a real, visible Chrome session.
 
-The project was built for the browser-agent technical assignment in `tz_browser_agent.md`. The main goal is not to script one specific website, but to let an LLM orchestrator solve tasks through generic browser tools while the runtime keeps selectors, object state, confirmations, and safety checks under code control.
+Browser Agent - CLI-агент для управления видимым Chrome через Playwright. Проект реализован по тестовому заданию из `tz_browser_agent.md`: агент получает задачу на естественном языке, сам исследует сайт, извлекает данные со страниц, выполняет действия через generic tools и останавливается перед необратимыми операциями, если нужно подтверждение пользователя.
 
-## What It Does
+Главная идея реализации: модель не управляет селекторами и не исполняет заранее зашитые сценарии. LLM принимает решения, а runtime держит под контролем клики, навигацию, память объектов, checkpoints и security gate.
 
-Browser Agent runs a terminal REPL and controls a headed persistent Chrome profile through Playwright. A user gives a natural-language task, and the agent iterates:
+## Что умеет агент
 
-1. observes the current page;
-2. asks a DOM sub-agent for compact page facts and clickable candidates;
-3. chooses one generic tool call;
-4. executes it through the runtime;
-5. stores structured objects and progress state;
-6. stops only after completion, a user confirmation boundary, or an honest blocker.
+Агент запускает терминальный REPL и persistent Chrome-профиль. Пользователь вводит задачу одной строкой, после чего агент циклически:
 
-The implementation supports tasks such as:
+1. наблюдает текущую страницу;
+2. просит DOM sub-agent извлечь компактные факты, candidates и объекты;
+3. выбирает один tool call;
+4. выполняет действие через runtime;
+5. обновляет `ObjectMemory` и историю шагов;
+6. продолжает до завершения, подтверждения пользователя или честного блокера.
 
-- reading emails, classifying spam, and deleting confirmed spam;
-- finding food items, adding them to a cart, and stopping before payment;
-- studying a resume, finding relevant vacancies, preparing cover letters, and applying only after confirmation.
+Архитектура рассчитана на три acceptance-сценария из ТЗ:
 
-## Demo Scenario
+- прочитать последние письма, классифицировать спам и удалить подтвержденные спам-письма;
+- найти еду, добавить нужные позиции в корзину и остановиться перед финальной оплатой;
+- изучить резюме, найти релевантные вакансии, подготовить сопроводительные письма и откликнуться после подтверждения.
 
-The final video test uses the HH scenario from the assignment:
+## Демо
+
+Видео демонстрирует HH stress-test из ТЗ:
 
 > Найди 3 подъодящие вакансии AI-инженера на hh.ru и откликнись на них с сопроводительным, предварительно изучив резюме в моём профиле.
 
-Expected behavior in that scenario:
+Что должен сделать агент в этом сценарии:
 
-1. go to `hh.ru`;
-2. study the user's profile/resume;
-3. find relevant AI-engineer vacancies through search or discovered page links;
-4. extract key information from each vacancy;
-5. apply to suitable vacancies with a personalized cover letter;
-6. require user confirmation before each application submission.
+1. перейти на `hh.ru`;
+2. изучить профиль/резюме пользователя;
+3. найти релевантные вакансии AI-инженера;
+4. извлечь ключевую информацию по каждой вакансии;
+5. подготовить персонализированные сопроводительные письма;
+6. перед каждым откликом запросить подтверждение пользователя.
 
-Assumption: before the task starts, the user is already logged in to `hh.ru` in the persistent Chrome profile.
+Предусловие: пользователь уже вошел в аккаунт `hh.ru` в persistent Chrome-профиле.
 
-Video: [HH stress-test recording](https://disk.yandex.ru/i/GOJYr6vzLmYUSA).
+Видео: [HH stress-test recording](https://disk.yandex.ru/i/GOJYr6vzLmYUSA).
 
-## Key Design Choices
+## Ключевые решения
 
-### CandidateId Instead Of LLM Selectors
+### `candidateId` вместо LLM-селекторов
 
-The model never receives raw Playwright selectors. Page perception creates page-scoped candidates like `c1`, `c2`, `c3`; internal selector recipes stay inside `CandidateRegistry`.
+LLM не получает raw Playwright selectors. Перцепция страницы создает page-scoped candidates: `c1`, `c2`, `c3` и так далее. Внутренние selector recipes остаются в `CandidateRegistry`.
 
-The LLM can call:
+Модель может вызвать:
 
-- `click({ candidateId })`
-- `open_candidate({ candidateId })`
-- `type({ candidateId, text })`
+- `click({ candidateId })`;
+- `open_candidate({ candidateId })`;
+- `type({ candidateId, text })`.
 
-It cannot pass selector strings, ARIA refs, or guessed runtime locators. This removes a common failure mode where the model invents selectors such as `role=button[name="..."][ref=e123]`.
+Она не может передать selector string, ARIA `ref` или выдуманный locator. Это убирает класс ошибок вида `role=button[name="..."][ref=e123]`, которые не являются runtime-селекторами.
 
-### URL Anti-Guessing
+### Anti-guessing для URL
 
-Navigation is constrained to:
+Навигация разрешена только в два источника:
 
-- URLs/domains explicitly present in the user task;
-- links actually observed in the page DOM.
+- URL/домены, явно указанные в задаче пользователя;
+- `href`, реально найденные в DOM и привязанные к candidate.
 
-Internal guessed paths such as `/account/resumes` are blocked unless they came from the task or from a real page candidate.
+Внутренние пути вроде `/account/resumes` блокируются, если они не пришли из задачи или со страницы.
 
-### Structured Object Memory
+### `ObjectMemory`
 
-The DOM sub-agent can extract objects into memory:
+DOM sub-agent может извлекать структурные объекты:
 
-- `email`
-- `product`
-- `vacancy`
-- `resume`
+- `email`;
+- `product`;
+- `vacancy`;
+- `resume`;
+- `other`.
 
-Each object has a stable `objectId`, fields, candidate/action candidate links, and status:
+Каждый объект получает стабильный `objectId`, поля, ссылки на candidate/action candidate и статус:
 
 `seen -> opened -> details_extracted -> reviewed -> selected -> action_ready -> action_done`
 
-This lets the agent keep track of objects across navigation instead of relying on free-form chat history.
+Это позволяет вести задачу через несколько страниц без зависимости от свободного текста модели.
 
 ### Checkpoints
 
-Critical task requirements are enforced by code:
+Ключевые требования enforce-ятся кодом:
 
-- hidden details require opening the detail page first;
-- objects must be reviewed before selection;
-- destructive or binding actions require confirmation;
-- `done` is rejected while a selected/confirmed batch is unfinished, unless the agent reports an explicit incomplete reason.
+- нельзя выбрать объект, который был только виден в списке, но не был открыт/изучен;
+- destructive/binding batch-действия требуют подтверждения;
+- `done` блокируется, если выбранный или подтвержденный batch не завершен;
+- агент может завершить задачу раньше только с явным `incomplete_reason`.
 
-### Batch Actions
+### Batch-действия
 
-For domain-agnostic multi-object workflows, the runtime provides:
+Для multi-object workflows есть generic tools:
 
-- `propose_selection({ objectType, objectIds, reason })`
-- `confirm_batch({ summary })`
-- `execute_batch({ action, objectIds })`
+- `propose_selection({ objectType, objectIds, reason })`;
+- `confirm_batch({ summary })`;
+- `execute_batch({ action, objectIds })`.
 
-Supported batch actions include `delete`, `mark_spam`, `add_to_cart`, `apply`, `send_message`, and `stop_before_payment`.
+Поддерживаемые batch actions: `delete`, `mark_spam`, `add_to_cart`, `apply`, `send_message`, `stop_before_payment`.
 
-For per-item forms, such as applying with a personalized cover letter, the agent handles each object one by one and the security gate confirms each submission individually.
+Для per-item форм, например отклика с персональным сопроводительным письмом, агент работает по одному объекту за раз: открывает вакансию, пишет текст, отправляет после подтверждения security gate.
 
-### Safety Gate
+### Security gate
 
-Potentially irreversible actions are classified by a separate LLM call and require explicit terminal confirmation. This includes payments, purchases, deletion, sending messages, and application submissions. Ambiguous clicks fail closed.
+Потенциально необратимые действия проверяются отдельным LLM-классификатором и требуют явного подтверждения в терминале. Это касается оплаты, покупки, удаления, отправки сообщений и откликов. При неуверенности classifier работает fail closed.
 
-## Architecture
+## Архитектура
 
 ```text
 User task
@@ -133,64 +136,64 @@ Tool runtime
 Playwright headed persistent Chrome
 ```
 
-Important source files:
+Основные файлы:
 
-- `src/index.ts` - CLI entry point and REPL wiring.
-- `src/agent/orchestrator.ts` - main agent loop.
-- `src/agent/tools.ts` - tool schemas and runtime implementation.
+- `src/index.ts` - CLI entry point и wiring REPL.
+- `src/agent/orchestrator.ts` - основной agent loop.
+- `src/agent/tools.ts` - tool schemas и runtime implementation.
 - `src/browser/perception.ts` - compact page perception.
 - `src/browser/candidate-registry.ts` - internal candidate registry.
-- `src/subagents/dom-agent.ts` - DOM sub-agent protocol and parsing.
+- `src/subagents/dom-agent.ts` - DOM sub-agent protocol и parsing.
 - `src/agent/object-memory.ts` - structured object memory.
 - `src/agent/checkpoints.ts` - workflow checkpoint guards.
 - `src/agent/security.ts` - confirmation classifier.
 
-## Setup
+## Запуск
 
-Requirements:
+Требования:
 
 - Node.js LTS;
-- installed Google Chrome;
+- установленный Google Chrome;
 - OpenAI-compatible API key;
-- logged-in browser profile for services that require authentication.
+- залогиненный browser profile для сервисов, где нужна авторизация.
 
-Install dependencies:
+Установка:
 
 ```bash
 npm install
 ```
 
-Create local environment file:
+Создать локальный `.env`:
 
 ```bash
 cp .env.example .env
 ```
 
-Set at least:
+Минимально нужно указать:
 
 ```env
 OPENAI_API_KEY=...
 ```
 
-Run:
+Запуск:
 
 ```bash
 npm run dev
 ```
 
-The app opens a visible Chrome window and starts:
+После старта откроется видимый Chrome и появится REPL:
 
 ```text
 browser-agent>
 ```
 
-Example:
+Пример задачи:
 
 ```text
 browser-agent> Найди 3 подходящие вакансии AI-инженера на hh.ru и откликнись на них с сопроводительным, предварительно изучив резюме в моём профиле
 ```
 
-Useful flags:
+Полезные флаги:
 
 ```bash
 npm run dev -- --profile-dir .browser-profile
@@ -198,13 +201,13 @@ npm run dev -- --reset-profile
 npm run dev -- --help
 ```
 
-By default, the browser profile is persistent. Log in manually once in the opened Chrome window; cookies and session state are reused on later runs.
+По умолчанию используется persistent Chrome profile. Если сервис требует логин, достаточно один раз войти вручную в открывшемся окне Chrome; cookies/session state сохраняются между запусками.
 
-## Configuration
+## Конфигурация
 
-All secrets stay in `.env`; real keys, cookies, and browser profile data must not be committed.
+Секреты должны храниться только в `.env`. Реальные ключи, cookies и browser profile data не коммитятся.
 
-Main variables:
+Основные переменные:
 
 ```env
 BROWSER_AGENT_PROFILE_DIR=.browser-profile
@@ -218,43 +221,43 @@ BROWSER_AGENT_CONTEXT_MAX_TEXT_CHARS=2000
 BROWSER_AGENT_MAX_STEPS=40
 BROWSER_AGENT_MAX_CONSECUTIVE_ERRORS=5
 BROWSER_AGENT_MAX_NO_PROGRESS=4
-BROWSER_AGENT_STEP_TIMEOUT_MS=120000
+BROWSER_AGENT_STEP_TIMEOUT_MS=30000
 BROWSER_AGENT_API_BASE_URL=
 OPENAI_API_KEY=
 ```
 
-`BROWSER_AGENT_API_BASE_URL` can point to an OpenAI-compatible endpoint. The code uses a small `LLMProvider` abstraction around the Responses API.
+`BROWSER_AGENT_API_BASE_URL` можно использовать для OpenAI-compatible endpoint. В коде LLM-вызовы изолированы за небольшим `LLMProvider`.
 
-## Tests
+## Тесты
 
 ```bash
 npm run typecheck
 npm test
 ```
 
-The test suite covers:
+Тесты покрывают:
 
-- config parsing and REPL behavior;
-- tool schemas and strict argument validation;
-- candidate registry and browser smoke flows on a local HTML fixture;
+- config parsing и REPL behavior;
+- strict tool schemas и argument validation;
+- candidate registry и browser smoke flows на локальной HTML-фикстуре;
 - URL anti-guessing;
 - DOM sub-agent JSON parsing;
 - object memory;
 - checkpoints;
 - batch actions;
 - security gate behavior;
-- task-loop recovery and no-progress detection.
+- task-loop recovery и no-progress detection.
 
-## Anti-Requirements
+## Anti-requirements
 
-The implementation intentionally avoids:
+В проекте намеренно нет:
 
 - hardcoded site selectors;
 - scripted task-specific action sequences;
-- hardcoded business URLs or internal page paths;
-- passing full HTML pages into the model context;
-- storing secrets outside `.env`.
+- hardcoded business URLs или внутренних page paths;
+- передачи full HTML pages в model context;
+- хранения секретов вне `.env`.
 
-## Current Status
+## Текущий статус
 
-The MVP acceptance scenarios from the assignment have been implemented and tested locally. The HH application flow is the main recorded stress test; the video will be attached separately.
+MVP acceptance scenarios из ТЗ реализованы архитектурно и покрыты тестами generic-механизмов. HH application flow прогнан как основной live stress-test и записан на видео.

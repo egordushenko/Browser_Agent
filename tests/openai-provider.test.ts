@@ -68,6 +68,23 @@ describe("OpenAIProvider", () => {
     });
   });
 
+  test("throws when the provider returns an in-body error (OpenRouter 200 error shape)", async () => {
+    const client: OpenAIResponsesClient = {
+      responses: {
+        create: async () => ({
+          error: { code: "rate_limit_exceeded", message: "Request too large for gpt-5.4" },
+          output: [],
+          usage: null as never,
+        }),
+      },
+    };
+    const provider = new OpenAIProvider({ apiKey: "test-key", model: "openai/gpt-5.4", client });
+
+    await expect(
+      provider.complete({ system: "s", messages: [{ role: "user", content: "hi" }], tools: [] }),
+    ).rejects.toThrow(/Request too large for gpt-5.4/);
+  });
+
   test("omits the tools field when no tools are provided", async () => {
     const requests: Record<string, unknown>[] = [];
     const client: OpenAIResponsesClient = {

@@ -5,6 +5,7 @@ import type { ToolCall, Usage } from "../types.js";
 export interface OpenAIResponsesClient {
   responses: {
     create: (request: unknown) => Promise<{
+      error?: { code?: string; message?: string } | null;
       output?: unknown[];
       output_text?: string;
       usage?: {
@@ -58,6 +59,13 @@ export class OpenAIProvider implements LLMProvider {
     }
 
     const response = await this.client.responses.create(request);
+
+    // OpenRouter surfaces upstream failures (rate limits, model access) inside a 200 body
+    // instead of throwing; without this the loop would silently see an empty response.
+    if (response.error) {
+      const detail = response.error.message ?? response.error.code ?? "unknown error";
+      throw new Error(`LLM provider error for model "${this.model}": ${detail}`);
+    }
 
     return {
       text: response.output_text,
